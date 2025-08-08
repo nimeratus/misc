@@ -1380,6 +1380,7 @@ class ZipMaker {
         const writer = this.tr.writable.getWriter();
         const files = zip._getAllMetadata();
         const paths = [...new Set(_paths)];
+        if(paths.length === 0) return;
         paths.sort((a, b)=>files[a].offset-files[b].offset);
         let readOffset = files[paths[0]].offset;
         let copier = new StreamSlicer(zip.zipFile.slice(readOffset).stream());
@@ -1473,4 +1474,5 @@ class ZipMaker {
         await writer.close();
         return await this.result;
     }
+
 }
