@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghost block remover</title>
+    <script src="gzip.js"></script>
+</head>
+<body>
+    <noscript>
+        <strong>JavaScript is needed for this to work, but it seems to be </strong>
+    </noscript>
+    <h1>Ghost block remover</h1>
+    <p>Removes blocks from the project that aren't the descendants of a top-level block. These don't appear in the editor and they never run, but they can cause things like some variables and lists (re)appearing</p>
+    <div><label>sb3 file: <input type="file" id="fi"/></label></div>
+    <div><button type="button" disabled id="btn">Fix project</button><output id="out"></output></div>
+    <output id="logs"></output>
+    <script>
+        var fi=document.getElementById("fi");
+        var btn=document.getElementById("btn");
+        var out=document.getElementById("out");
+        var logs=document.getElementById("logs");
+        function log(message) {
+            var div=document.createElement("div");
+            div.innerText=message;
+            logs.appendChild(div);
+            return div;
+        }
+        var isRunning = false;
+        function controlButtons() {
+            btn.disabled = isRunning || !(fi.files && fi.files[0]);
+            fi.disabled = isRunning;
+        }
+        controlButtons();
+        fi.oninput = controlButtons;
+        setInterval(controlButtons, 100);
+        btn.onclick = async function() {
+            isRunning = true;
+            controlButtons();
+            logs.innerText="";
+            var file = fi.files[0];
+            var zip = null;
+            var project = null;
+            var sprites = [];
+            if((await file.slice(0,1).text()) == "{") {
+                project = JSON.parse(await file.text());
+            }
+            else {
+                zip = new Zip(fi.files[0]);
+                await zip.loadMetadata();
+                if(zip.hasFile("project.json")) {
+                    project = JSON.parse(new TextDecoder().decode(await zip.getFileContentAsync("project.json")));
+                }
+                else if(zip.hasFile("sprite.json")) {
+                    project = JSON.parse(new TextDecoder().decode(await zip.getFileContentAsync("sprite.json")));
+                }
+            }
+            var totalBlocksInProject = 0;
+            var totalBlocksRemoved = 0;
+            var blocksRemovedInSprite = 0;
+            if(project.targets) {
+                sprites = [...project.targets];
+            }
+            else {
+                sprites = [project];
+            }
+            var referenced = new Set();
+            for(let sprite of sprites) {
+                if(!sprite || !sprite.blocks) continue;
+                console.log(sprite.name);
+                referenced.clear();
+                blocksRemovedInSprite = 0;
+                for(let blockId in sprite.blocks) {
+                    if(sprite.blocks[blockId] && (sprite.blocks[blockId].topLevel || Array.isArray(sprite.blocks[blockId]) && sprite.blocks[blockId].length === 5)) {
+                        markReferenced(blockId, sprite.blocks, referenced);
+                    }
+                }
+                for(let blockId in sprite.blocks) {
+                    if(!referenced.has(blockId)) {
+                        console.log(sprite.blocks[blockId]);
+                        delete sprite.blocks[blockId];
+                        blocksRemovedInSprite += 1;
+                        totalBlocksRemoved += 1;
+                    }
+                    totalBlocksInProject += 1;
+                }
+                if(blocksRemovedInSprite > 0) {
+                    log(`${blocksRemovedInSprite} blocks removed from ${sprite.name}`);
+                }
+            }
+            log("----");
+            log(`${totalBlocksRemoved} blocks (${(100*totalBlocksRemoved / totalBlocksInProject).toPrecision(2)}%) removed from the project`);
+            var outFile = new Blob([JSON.stringify(project)], {type: "application/json"});
+            var jsonName = project.targets ? "project.json" : "sprite.json";
+            if(zip) {
+                var zipout = new ZipMaker();
+                await zipout.addFile(outFile, jsonName);
+                log("Copying assets...");
+                await zipout.copyFiles(zip, zip.listDirectoryContent("").filter(x=>!x.endsWith(".json")));
+                outFile = await zipout.generateZip();
+            }
+            //out.innerHTML="";
+            var a=document.createElement("a");
+            a.download = "fixed-"+file.name;
+            a.href=URL.createObjectURL(outFile);
+            a.innerText = "download "+a.download;
+            logs.appendChild(a);
+            
+            isRunning = false;
+            controlButtons();
+        }
+        function markReferenced(blockId, blocks, set) {
+            if(set.has(blockId)) return;
+            set.add(blockId);
+            let block = blocks[blockId];
+            if(!block) return;
+            if(typeof block.next === "string") markReferenced(block.next, blocks, set);
+            if(!block.inputs) return;
+            for(let name in block.inputs) {
+                let input = block.inputs[name];
+                for(let i=1; i<input.length; i++) {
+                    if(typeof input[i] === "string") {
+                        markReferenced(input[i], blocks, set);
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
