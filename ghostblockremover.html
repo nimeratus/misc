@@ -3,19 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ghost block remover</title>
+    <title>sb3 bug fixer</title>
+<script>onerror=alert;</script>
     <script src="gzip.js"></script>
+<style>
+.explanation{
+margin-left: 2em;
+margin-bottom: 1em;
+}
+.warning {
+padding: 0 0.2em;
+background-color: #ffcc0088;
+border-radius: 0.2em;
+}
+</style>
 </head>
 <body>
     <noscript>
-        <strong>JavaScript is needed for this to work, but it seems to be </strong>
+        <strong>JavaScript is needed for this to work, but it seems to be disabled</strong>
     </noscript>
-    <h1>Ghost block remover</h1>
-    <p>Removes blocks from the project that aren't the descendants of a top-level block. These don't appear in the editor and they never run, but they can cause things like some variables and lists (re)appearing</p>
+    <form>
+    <h1>sb3 bug fixer</h1>
+    <div><label><input type="checkbox" name="fixBlocks" checked />Remove ghost blocks</label></div>
+    <div class="explanation">Blocks in the JSON that aren't marked as top level and aren't the descendants of top level blocks. They are invisible in the editor and they don't run, but they can cause things like variables/lists reappearing</div>
+    
+    <label><input type="checkbox" name="fixVariables" checked />Remove ghost lists/variables</label> <span class="warning">might changes project behavior</span>
+    <div class="explanation">Multiple variables in the same sprite, with the same name, but different ID. They also don't appear in the editor</div>
+    
     <div><label>sb3 file: <input type="file" id="fi"/></label></div>
     <div><button type="button" disabled id="btn">Fix project</button><output id="out"></output></div>
     <output id="logs"></output>
+    </form>
     <script>
+        var E=document.forms[0].elements;
         var fi=document.getElementById("fi");
         var btn=document.getElementById("btn");
         var out=document.getElementById("out");
@@ -34,10 +54,12 @@
         controlButtons();
         fi.oninput = controlButtons;
         setInterval(controlButtons, 100);
-        btn.onclick = async function() {
+        btn.onclick = ()=>handleClick().catch(alert);
+        async function handleClick() {
             isRunning = true;
             controlButtons();
             logs.innerText="";
+            log("Extracting JSON from the file...");
             var file = fi.files[0];
             var zip = null;
             var project = null;
@@ -55,41 +77,16 @@
                     project = JSON.parse(new TextDecoder().decode(await zip.getFileContentAsync("sprite.json")));
                 }
             }
-            var totalBlocksInProject = 0;
-            var totalBlocksRemoved = 0;
-            var blocksRemovedInSprite = 0;
+            
             if(project.targets) {
                 sprites = [...project.targets];
             }
             else {
                 sprites = [project];
             }
-            var referenced = new Set();
-            for(let sprite of sprites) {
-                if(!sprite || !sprite.blocks) continue;
-                console.log(sprite.name);
-                referenced.clear();
-                blocksRemovedInSprite = 0;
-                for(let blockId in sprite.blocks) {
-                    if(sprite.blocks[blockId] && (sprite.blocks[blockId].topLevel || Array.isArray(sprite.blocks[blockId]) && sprite.blocks[blockId].length === 5)) {
-                        markReferenced(blockId, sprite.blocks, referenced);
-                    }
-                }
-                for(let blockId in sprite.blocks) {
-                    if(!referenced.has(blockId)) {
-                        console.log(sprite.blocks[blockId]);
-                        delete sprite.blocks[blockId];
-                        blocksRemovedInSprite += 1;
-                        totalBlocksRemoved += 1;
-                    }
-                    totalBlocksInProject += 1;
-                }
-                if(blocksRemovedInSprite > 0) {
-                    log(`${blocksRemovedInSprite} blocks removed from ${sprite.name}`);
-                }
-            }
+            if(E.fixBlocks.checked) removeGhostBlocksFromSprites(sprites);
             log("----");
-            log(`${totalBlocksRemoved} blocks (${(100*totalBlocksRemoved / totalBlocksInProject).toPrecision(2)}%) removed from the project`);
+            if(E.fixVariables.checked) removeGhostVariablesFromSprites(sprites);
             var outFile = new Blob([JSON.stringify(project)], {type: "application/json"});
             var jsonName = project.targets ? "project.json" : "sprite.json";
             if(zip) {
@@ -125,6 +122,119 @@
                 }
             }
         }
+function removeGhostBlocksFromSprites(sprites) {
+var totalBlocksInProject = 0;
+            var totalBlocksRemoved = 0;
+            var blocksRemovedInSprite = 0;
+var referenced = new Set();
+            for(let sprite of sprites) {
+                if(!sprite || !sprite.blocks) continue;
+                console.log(sprite.name);
+                referenced.clear();
+                blocksRemovedInSprite = 0;
+                for(let blockId in sprite.blocks) {
+                    if(sprite.blocks[blockId] && (sprite.blocks[blockId].topLevel || Array.isArray(sprite.blocks[blockId]) && sprite.blocks[blockId].length === 5)) {
+                        markReferenced(blockId, sprite.blocks, referenced);
+                    }
+                }
+                for(let blockId in sprite.blocks) {
+                    if(!referenced.has(blockId)) {
+                        console.log(sprite.blocks[blockId]);
+                        delete sprite.blocks[blockId];
+                        blocksRemovedInSprite += 1;
+                        totalBlocksRemoved += 1;
+                    }
+                    totalBlocksInProject += 1;
+                }
+                if(blocksRemovedInSprite > 0) {
+                    log(`${blocksRemovedInSprite} blocks removed from ${sprite.name}`);
+                }
+            }
+            log("----");
+            log(`${totalBlocksRemoved} blocks (${(100*totalBlocksRemoved / totalBlocksInProject).toPrecision(2)}%) removed from the project`);
+}
+
+function removeGhostVariablesFromSprites(sprites) {
+var totalVarsInProject=0;
+var totalVarsRemoved=0;
+for(let sprite of sprites) {
+if(!sprite) continue;
+let removedVars=0, removedLists=0;
+let vars={__proto__:null};
+if(sprite.variables) {
+for(let id in sprite.variables) {
+totalVarsInProject+=1;
+let [name, value]=sprite.variables[id];
+if(name in vars) {
+delete sprite.variables[id];
+removedVars+=1;
+totalVarsRemoved+=1;
+}
+else {
+vars[name]=id;
+}
+}
+}
+let lists={__proto__:null};
+if(sprite.lists) {
+for(let id in sprite.lists) {
+totalVarsInProject+=1;
+let [name, value]=sprite.lists[id];
+if(name in lists) {
+delete sprite.lists[id];
+removedLists+=1;
+totalVarsRemoved+=1;
+}
+else {
+lists[name]=id;
+}
+}
+}
+if(removedVars>0) log(`${removedVars} variables removed from ${sprite.name}`);
+if(removedLists>0) log(`${removedLists} lists removed from ${sprite.name}`);
+fixVariableBlocksInSprites(sprite.isStage?sprites:[sprite], vars, lists);
+}
+log("----");
+log(`${totalVarsRemoved} variables and lists (${(totalVarsRemoved/totalVarsInProject).toPrecision(2)}%) removed from project`);
+}
+function* getBlockObjects(blocks) {
+for(let block of Object.values(blocks)) {
+if(!block) continue;
+yield block;
+if(block.inputs){
+for(let input of Object.values(block.inputs)) {
+for(let i=1; i<input.length; i++){
+if(Array.isArray(input[i])) yield input[i];
+}
+}
+}
+}
+}
+function fixVariableBlocksInSprites(sprites, vars, lists){
+for(let sprite of sprites) {
+if(!sprite || !sprite.blocks) continue;
+for(let block of getBlockObjects(sprite.blocks)) {
+if(block[0]==12) {
+if(block[1] in vars){
+block[2]=vars[block[1]];
+}
+}
+if(block[0]==13) {
+if(block[1] in lists){
+block[2]=lists[block[1]];
+}
+}
+if(block.fields) {
+if(block.fields.VARIABLE && (block.fields.VARIABLE[0] in vars)) {
+block.fields.VARIABLE[1] = vars[block.fields.VARIABLE[0]];
+}
+if(block.fields.LIST && (block.fields.LIST[0] in lists)) {
+block.fields.LIST[1] = lists[block.fields.LIST[0]];
+}
+}
+}
+}
+}
     </script>
 </body>
 </html>
