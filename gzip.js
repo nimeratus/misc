@@ -1394,7 +1394,7 @@ class ZipMaker {
                 readOffset = fileInfo.offset;
                 copier = new StreamSlicer(zip.zipFile.slice(readOffset).stream());
             }
-            copier.skipNextNBytes(fileInfo.offset - readOffset);
+            await copier.skipNextNBytes(fileInfo.offset - readOffset);
             readOffset = fileInfo.offset;
             let localHeaderU8a = await copier.getNextNBytes(30);
             readOffset+=30;
@@ -1476,3 +1476,4 @@ class ZipMaker {
     }
 
 }
+
