@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="gzip.js"></script>
+</head>
+<body>
+    <p>This thing reduces the size of sb3 files by deleting image and sound files (&approx; it corrupts the sb3 file). This is useful only in a few cases</p>
+    <p><div>/!\ The output can't be opened in the offline editor /!\</div>
+    <div>/!\ Expect permanent question marks if the assets weren't uploaded separately /!\</div></p>
+    <div><label><input type="radio" name="mode" value="deleteAll"/> Delete all image and sound files</label></div>
+    <div><label><input type="radio" name="mode" value="keepSome" checked id="modeChooser"/> Copy files until the size reaches around 5&nbsp;MiB, delete all other files</label></div>
+    <input type="file" id="f"/>
+    <button type="button" id="b">Start</button>
+    <progress id="p" hidden></progress>
+    <a id="a"></a>
+    <div id="log"></div>
+    <script>
+/** @type {HTMLAnchorElement} */
+var a = document.getElementById("a");
+/** @type {HTMLButtonElement} */
+var b = document.getElementById("b");
+/** @type {HTMLInputElement} */
+var fi = document.getElementById("f");
+/** @type {HTMLProgressElement} */
+var p = document.getElementById("p");
+/** @type {HTMLInputElement} */
+var modeChooser = document.getElementById("modeChooser");
+
+var log=document.getElementById("log");
+
+b.onclick = gomb;
+async function gomb() {
+    try {
+        b.disabled = true;p.hidden=false;
+        a.removeAttribute("href");
+        a.innerText=log.innerText="";
+        f = fi.files[0];
+        a.href=URL.createObjectURL(await teszt(f));
+        a.download="teszt.zip";
+        a.innerText="Download processed copy";
+    } catch(err) {
+        alert(err);
+    }
+    b.disabled = false;p.hidden=true;
+}
+/**
+ * @param {Blob} f 
+ */
+async function teszt(f) {
+    function say(msg) {
+        var div=document.createElement("div");
+        div.innerText=msg;
+        log.appendChild(div);
+    }
+    var zip = new Zip(f);
+    say("loadMetadata");
+    await zip.loadMetadata(p);
+    let filesToCopy = ["project.json"];
+    let size = 100+zip.getCompressedFileSize("project.json")+200;
+    let smallest = null;
+    if(modeChooser.checked) {
+        say("picking some files to copy");
+        let project = JSON.parse(new TextDecoder().decode(await zip.getFileContentAsync("project.json")));
+        var assets=new Set();
+        for(let target of project.targets) {
+            for(let costume of target.costumes) {
+                assets.add(costume.md5ext || `${costume.assetId}.${costume.dataFormat}`);
+            }
+            for(let sound of target.sounds) {
+                assets.add(sound.md5ext || `${sound.assetId}.${sound.dataFormat}`);
+            }
+        }
+        project = null;
+        let list = zip.listDirectoryContent("").filter(x=>x!="project.json"&&assets.has(x));
+        list.sort((a,b)=>zip.getCompressedFileSize(b)-zip.getCompressedFileSize(a));
+        while(size+zip.getCompressedFileSize(list[list.length-1])+200<5*1024*1024) {
+            size+=zip.getCompressedFileSize(list[list.length-1])+150;
+            filesToCopy.push(list.pop());
+        }
+        if(list.length>0) smallest=zip.getCompressedFileSize(list[list.length-1]);
+    }
+    say(`copying ${filesToCopy.length} files, ${zip.listDirectoryContent("").length-filesToCopy.length} left out`+(smallest!==null?` (the smallest left out is ${smallest/1024} KiB)`:""));
+    var zipout = new ZipMaker();
+    await zipout.copyFiles(zip, filesToCopy, p);
+    say("generateZip");
+    var blob=await zipout.generateZip();
+    say(`size: ${blob.size/1024/1024} MiB`);
+    return blob;
+}
+    </script>
+</body>
+</html>
