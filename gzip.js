@@ -1074,13 +1074,24 @@ class Zip {
     /**
      * Requires metadata to be loaded
      * @param {string} path
-     * @returns the size of the file
+     * @returns the size of the file as if it was extracted
      */
     getFileSize(path) {
         if(!this.#files) throw new DOMException("Metadata is not loaded", "InvalidStateError");
         path=this.root+path;
         if(!(path in this.#files)) throw new DOMException("File not found", "NotFoundError");
         return this.#files[path].realSize;
+    }
+    /**
+     * Requires metadata to be loaded
+     * @param {string} path
+     * @returns the size of the file as it's compressed in the zip now
+     */
+    getCompressedFileSize(path) {
+        if(!this.#files) throw new DOMException("Metadata is not loaded", "InvalidStateError");
+        path=this.root+path;
+        if(!(path in this.#files)) throw new DOMException("File not found", "NotFoundError");
+        return this.#files[path].compSize;
     }
     /**
      * Requires all files to be loaded
@@ -1474,6 +1485,4 @@ class ZipMaker {
         await writer.close();
         return await this.result;
     }
-
 }
-
