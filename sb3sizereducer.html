@@ -10,7 +10,8 @@
     <p><div>/!\ The output can't be opened in the offline editor /!\</div>
     <div>/!\ Expect permanent question marks if the assets weren't uploaded separately /!\</div></p>
     <div><label><input type="radio" name="mode" value="deleteAll"/> Delete all image and sound files</label></div>
-    <div><label><input type="radio" name="mode" value="keepSome" checked id="modeChooser"/> Copy files until the size reaches around 5&nbsp;MiB, delete all other files</label></div>
+    <div><label><input type="radio" name="mode" value="keepSome" checked id="modeChooser"/> Copy files until the size reaches the given size, delete all other files</label></div>
+    <div><label>Target size: <input type="text" value="10" id="size"/>&nbsp;MiB</label></div>
     <input type="file" id="f"/>
     <button type="button" id="b">Start</button>
     <progress id="p" hidden></progress>
@@ -27,6 +28,8 @@ var fi = document.getElementById("f");
 var p = document.getElementById("p");
 /** @type {HTMLInputElement} */
 var modeChooser = document.getElementById("modeChooser");
+/** @type {HTMLInputElement} */
+var sizeInput = document.getElementById("size");
 
 var log=document.getElementById("log");
 
@@ -49,6 +52,7 @@ async function gomb() {
  * @param {Blob} f 
  */
 async function teszt(f) {
+    var sizeLimit = (+sizeInput.value)*1024*1024;
     function say(msg) {
         var div=document.createElement("div");
         div.innerText=msg;
@@ -75,7 +79,7 @@ async function teszt(f) {
         project = null;
         let list = zip.listDirectoryContent("").filter(x=>x!="project.json"&&assets.has(x));
         list.sort((a,b)=>zip.getCompressedFileSize(b)-zip.getCompressedFileSize(a));
-        while(size+zip.getCompressedFileSize(list[list.length-1])+200<5*1024*1024) {
+        while(size+zip.getCompressedFileSize(list[list.length-1])+200<sizeLimit) {
             size+=zip.getCompressedFileSize(list[list.length-1])+150;
             filesToCopy.push(list.pop());
         }
