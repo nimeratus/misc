@@ -12,6 +12,7 @@
     <div><label><input type="radio" name="mode" value="deleteAll"/> Delete all image and sound files</label></div>
     <div><label><input type="radio" name="mode" value="keepSome" checked id="modeChooser"/> Copy files until the size reaches the given size, delete all other files</label></div>
     <div><label>Target size: <input type="text" value="10" id="size"/>&nbsp;MiB</label></div>
+    <div><label>Decompress files where compressed size is bigger than 0%&nbsp;<input type="range" min="0" max="100" value="100" id="maxCompressionBadness"/>&nbsp;100% of the original size</label></div>
     <input type="file" id="f"/>
     <button type="button" id="b">Start</button>
     <progress id="p" hidden></progress>
@@ -30,6 +31,8 @@ var p = document.getElementById("p");
 var modeChooser = document.getElementById("modeChooser");
 /** @type {HTMLInputElement} */
 var sizeInput = document.getElementById("size");
+/** @type {HTMLInputElement} */
+var maxCompressionBadness = document.getElementById("maxCompressionBadness");
 
 var log=document.getElementById("log");
 
@@ -44,6 +47,7 @@ async function gomb() {
         a.download="teszt.zip";
         a.innerText="Download processed copy";
     } catch(err) {
+        console.error(err);
         alert(err);
     }
     b.disabled = false;p.hidden=true;
@@ -61,7 +65,15 @@ async function teszt(f) {
     var zip = new Zip(f);
     say("loadMetadata");
     await zip.loadMetadata(p);
-    let filesToCopy = ["project.json"];
+
+    function getInfoForFile(filename) {
+        let compSize = zip.getCompressedFileSize(filename);
+        let realSize = zip.getFileSize(filename);
+        let shouldDecompress = +maxCompressionBadness.value/100 < compSize/realSize;
+        return {name: filename, shouldDecompress, outSize: shouldDecompress?realSize:compSize, realSize, compSize};
+    }
+
+    let filesToAdd = [getInfoForFile("project.json")];
     let size = 100+zip.getCompressedFileSize("project.json")+200;
     let smallest = null;
     if(modeChooser.checked) {
@@ -78,16 +90,31 @@ async function teszt(f) {
         }
         project = null;
         let list = zip.listDirectoryContent("").filter(x=>x!="project.json"&&assets.has(x));
-        list.sort((a,b)=>zip.getCompressedFileSize(b)-zip.getCompressedFileSize(a));
-        while(size+zip.getCompressedFileSize(list[list.length-1])+200<sizeLimit) {
-            size+=zip.getCompressedFileSize(list[list.length-1])+150;
-            filesToCopy.push(list.pop());
+        list = list.map(getInfoForFile);
+        list.sort((a,b)=>b.outSize-a.outSize);
+        while(list.length>0 && size+list[list.length-1].outSize+200<sizeLimit) {
+            size+=list[list.length-1].outSize+150;
+            filesToAdd.push(list.pop());
         }
-        if(list.length>0) smallest=zip.getCompressedFileSize(list[list.length-1]);
+        if(list.length>0) smallest=list[list.length-1];
     }
-    say(`copying ${filesToCopy.length} files, ${zip.listDirectoryContent("").length-filesToCopy.length} left out`+(smallest!==null?` (the smallest left out is ${smallest/1024} KiB)`:""));
+    say(`copying ${filesToAdd.length} files, ${zip.listDirectoryContent("").length-filesToAdd.length} left out`+(smallest!==null?` (the smallest left out is ${smallest.compSize/1024} KiB / ${smallest.realSize/1024} KiB)`:""));
+    
+    var filesToCopy = filesToAdd.filter(file=>!file.shouldDecompress).map(file=>file.name);
+    var filesToDecompress = filesToAdd.filter(file=>file.shouldDecompress).map(file=>file.name);
+
+    say(`copying ${filesToCopy.length} files without decompressing`);
+
     var zipout = new ZipMaker();
     await zipout.copyFiles(zip, filesToCopy, p);
+    
+    say(`decompressing ${filesToDecompress.length} files`);
+    p.max=filesToDecompress.length;
+    for(let i=0; i<filesToDecompress.length; i++) {
+        p.value=i;
+        await zipout.addFile(new Blob([await zip.getFileContentAsync(filesToDecompress[i])]), filesToDecompress[i]);
+    }
+
     say("generateZip");
     var blob=await zipout.generateZip();
     say(`size: ${blob.size/1024/1024} MiB`);
