@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>File &rarr; Hex</title>
+</head>
+<body>
+File &rarr; Hex
+<div><input type="file" oninput="megnyit();" id="f"></div>
+<div><textarea readonly id="t" style="white-space: pre;"></textarea></div>
+<script>
+var f=document.getElementById("f");
+var t=document.getElementById("t");
+async function megnyit() {
+    f.disabled=true;
+    t.disabled=true;
+    try {
+        t.value="";
+        var ab = await f.files[0].arrayBuffer();
+        var u8a=new Uint8Array(ab);
+        var str="";
+        for(let i=0; i<u8a.length; i++) {
+            str+=u8a[i].toString(16).padStart(2,"0");
+        }
+        t.value=str;
+    } catch(err) {
+        console.error(err);alert(err);
+    } finally {
+        t.disabled=false;
+        f.disabled=false;
+    }
+}
+</script>
+</body>
+</html>
