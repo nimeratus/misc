@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vonalkódolvasó</title>
+<script>onerror=x=>alert("HIBA:\n"+x);onunhandledrejection=x=>alert("HIBA:\n"+x.reason);</script>
+<style>
+svg {
+object-fit: scale-down;
+}
+path {
+stroke-width: 4;
+fill-opacity: 0.5;
+animation: pulzal 5s ease-in-out infinite;
+}
+@keyframes pulzal {
+0% {
+
+}
+50% {
+fill-opacity: 0.2;
+}
+100% {
+
+}
+}
+.format::after {
+content: ":";
+}
+.format {
+font-weight: bold;
+}
+.format, .rawValue {
+font-family: monospace;
+white-space: pre;
+}
+.rawValue {
+user-select: all;
+overflow: auto;
+flex-shrink: 1;
+}
+.rawValue::before {
+content: "";
+margin-left: 0.5em;
+}
+.rawValue::after {
+content: "";
+margin-right: 0.5em;
+}
+.kimenet {
+--min-width: fit-content;
+padding: 0.5em;
+display: flex;
+flex-wrap: wrap;
+}
+input {
+margin: 0.5em;
+}
+</style>
+</head>
+<body>
+<h1>Vonalkódolvasó</h1>
+<noscript>A vonalkódolvasó működéséhez JavaScript szükséges.</noscript>
+<input type="file" accept="image/*" disabled>
+<div><output></output></div>
+<script>
+var inp=document.querySelector("input");
+var outp=document.querySelector("output");
+var detector;
+if(!window.BarcodeDetector) outp.innerText="A vonalkódolvasást ez az eszköz/böngésző nem támogatja.";
+else {
+detector=new BarcodeDetector();
+inp.disabled=false;
+var cs=document.createElement("h2");
+cs.innerText="A böngésző által támogatott vonalkódok:";
+outp.appendChild(cs);
+if(BarcodeDetector.getSupportedFormats) {
+var ul=document.createElement("ul");
+outp.appendChild(ul);
+BarcodeDetector.getSupportedFormats().then(function(formats){
+for(let f of formats) {
+let li=document.createElement("li");
+li.innerText=f;
+ul.appendChild(li);
+}
+});
+}
+else {
+outp.innerText="A támogatott vonalkódtípusok nem listázhatóak ki.";
+}
+}
+const ns="http://www.w3.org/2000/svg";
+inp.onchange=async function(){
+if(!inp.files[0]) return;
+inp.disabled=true;
+img=document.createElement("img");
+var url=URL.createObjectURL(inp.files[0]);
+img.src=url;
+await img.decode();
+outp.innerHTML="";
+var w=img.naturalWidth;
+var h=img.naturalHeight;
+var div=document.createElement("div");
+outp.appendChild(div);
+div.innerText="...";
+var svg=document.createElementNS(ns, "svg");
+svg.setAttribute("viewBox",""+[0,0,w,h]);
+outp.appendChild(svg);
+var image=document.createElementNS(ns,"image");
+image.setAttribute("href",url);
+image.x.baseVal.value=0;
+image.y.baseVal.value=0;
+svg.appendChild(image);
+var bcs=await detector.detect(img);
+if(bcs.length>0) {
+div.innerHTML="";
+for(var i=0; i<bcs.length; i++) {
+var code=bcs[i];
+var div2=document.createElement("div");
+div2.className="kimenet";
+var df=document.createElement("span");
+var dv=document.createElement("span");
+df.className="format";
+dv.className="rawValue";
+df.innerText=code.format;
+dv.innerText=code.rawValue;
+div2.appendChild(df);
+div2.appendChild(dv);
+div.appendChild(div2);
+var path=document.createElementNS(ns,"path");
+path.setAttribute("d",
+"M"+code.cornerPoints[3].x+" "+code.cornerPoints[3].y+" "+
+"L"+code.cornerPoints.map(p=>p.x+" "+p.y).join(" ")+"Z");
+var color="rgb("+[Math.cos(i)*128+128, Math.sin(i)*128+128, Math.cos(i/Math.PI)*-128+128]+")";
+var color1="rgb("+[Math.cos(i)*128+118, Math.sin(i)*128+118, Math.cos(i/Math.PI)*-128+118]+")";
+var color2="rgb("+[Math.cos(i)*128+138, Math.sin(i)*128+138, Math.cos(i/Math.PI)*-128+138]+")";
+div2.style.backgroundColor=color;
+path.style.stroke=color1
+path.style.fill=color2;
+svg.appendChild(path);
+}
+} else {
+div.innerText="Nincs felismert vonalkód a képen.";
+}
+inp.disabled=false;
+}
+</script>
+</body>
+</html>
