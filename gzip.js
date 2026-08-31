@@ -9,27 +9,59 @@
 // but it can copy files quickly in the zip files with the copyFiles() function
 // which doesn't decompress the files, it just copies them as they were in the old zip file
 
+/**
+ * @typedef {ArrayBufferView | ArrayBufferLike} ByteWritable
+ * @typedef {ByteWritable | ArrayLike<number> | Iterable<number>} ByteReadable
+ */
+
 /** https://datatracker.ietf.org/doc/html/rfc1951 */
 const Deflate = Object.freeze({
     lenCodes: Object.freeze([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]),
-    /** @type {{len: number, bits: number}[]} */
-    lens: [],
-    /** @type {{dist: number, bits: number}[]} */
-    dists: [],
+    lens: (function() {
+        const lens=[];
+        let x=0;
+        let y=0;
+        for(let i=257; i<285; i++) {
+            y=Math.max(0,Math.floor((i-261)/4));
+            lens[i] = { len: x+3, bits: y };
+            x += 1<<y;
+        }
+        lens[285] = { len: 258, bits: 0 };
+        return Object.freeze(lens);
+    })(),
+    dists: (function () {
+        const dists=[];
+        let x=0;
+        let y=0;
+        for(let i=0; i<30; i++) {
+            y=Math.max(0,Math.floor((i-2)/2));
+            dists[i] = { dist: x+1, bits: y };
+            x += 1<<y;
+        }
+        return Object.freeze(dists);
+    })(),
+
     /**
-     * @param {ArrayBufferView|ArrayBufferLike|ArrayLike<number>} readFrom
-     * @param {ArrayBufferView|ArrayBufferLike} writeTo
+     * @param {ByteReadable} x
+     * @returns {Uint8Array}
+     */
+    asUint8Array(x) {
+        if(ArrayBuffer.isView(x))
+            return new Uint8Array(x.buffer, x.byteOffset, x.byteLength);
+        else if("length" in x)
+            return new Uint8Array(x);
+        else if(Symbol.iterator in x)
+            return new Uint8Array(x);
+        else
+            return new Uint8Array(x);
+    },
+    /**
+     * @param {ByteReadable} readFrom
+     * @param {ByteWritable} writeTo
      */
     decode(readFrom, writeTo) {
-        var /** @type {Uint8Array} */ src, /** @type {Uint8Array} */ dst;
-        if(ArrayBuffer.isView(readFrom))
-            src=new Uint8Array(readFrom.buffer, readFrom.byteOffset, readFrom.byteLength);
-        else
-            src=new Uint8Array(readFrom);
-        if(ArrayBuffer.isView(writeTo))
-            dst=new Uint8Array(writeTo.buffer, writeTo.byteOffset, writeTo.byteLength);
-        else
-            dst=new Uint8Array(writeTo);
+        var src = this.asUint8Array(readFrom), dst = this.asUint8Array(writeTo);
+        
         var last=false;
         /** @param {number} i */
         function getbit(i) {
@@ -238,15 +270,11 @@ const Deflate = Object.freeze({
         return n;
     },
         /**
-     * @param {ArrayBufferView|ArrayBufferLike|ArrayLike<number>} source
+     * @param {ByteReadable} source
      * @returns {{compressed: number, uncompressed: number}}
      */
     getSize(source) {
-        var /** @type {Uint8Array} */ src;
-        if(ArrayBuffer.isView(source))
-            src=new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-        else
-            src=new Uint8Array(source);
+        var src = this.asUint8Array(source)
         var last=false;
         /** @param {number} i */
         function getbit(i) {
@@ -441,16 +469,12 @@ const Deflate = Object.freeze({
         return {compressed:Math.ceil(i/8), uncompressed: n};
     },
     /**
-     * @param {ArrayBufferView|ArrayBufferLike|ArrayLike<number>} source
+     * @param {ByteReadable} source
      * @returns {ArrayBuffer} the source in Deflate format, without compression
      */
     encode(source) {
-        /** @type {Uint8Array} */
-        var src;
-        if(ArrayBuffer.isView(source))
-            src=new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-        else
-            src=new Uint8Array(source);
+        var src = this.asUint8Array(source);
+
         var len=src.length;
         len+=Math.ceil(len/65535)*5;
         var res=new ArrayBuffer(len);
@@ -478,8 +502,9 @@ const Deflate = Object.freeze({
         return res;
     },
     /**
-     * @param {ArrayBufferView|ArrayBufferLike|ArrayLike<number>} source
-     * @returns {ArrayBuffer} the source in Deflate format, compressed
+     * @deprecated
+     * @param {ByteReadable} source
+     * @returns {ArrayBuffer} if it worked, it would return the source in Deflate format, compressed
      */
     compress(source) {
         /**
@@ -491,12 +516,7 @@ const Deflate = Object.freeze({
         /** @typedef {{next: LinkedItem, value: number}|undefined} LinkedItem */
         /** @type {LinkedItem[]} */
         let hashTable = Array(0x10000);
-        /** @type {Uint8Array} */
-        let src;
-        if(ArrayBuffer.isView(source))
-            src=new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-        else
-            src=new Uint8Array(source);
+        let src = this.asUint8Array(source);
         /** @type {(number|[number,number])[]} */
         let compressedData=[];
         let i;
@@ -814,36 +834,14 @@ const Deflate = Object.freeze({
         return result.buffer;
     }
 });
-{
-    let x=0;
-    let y=0;
-    for(let i=257; i<285; i++) {
-        y=Math.max(0,Math.floor((i-261)/4));
-        Deflate.lens[i] = { len: x+3, bits: y };
-        x += 1<<y;
-    }
-    Deflate.lens[285] = { len: 258, bits: 0 };
-    Object.freeze(Deflate.lens);
-    x=0;
-    y=0;
-    for(let i=0; i<30; i++) {
-        y=Math.max(0,Math.floor((i-2)/2));
-        Deflate.dists[i] = { dist: x+1, bits: y };
-        x += 1<<y;
-    }
-    Object.freeze(Deflate.dists);
-}
 /** https://datatracker.ietf.org/doc/html/rfc1952 */
 const Gzip=Object.freeze({
     /**
-     * @param {ArrayBufferView|ArrayBufferLike|ArrayLike<number>} source
+     * @param {ByteReadable} source
      * @returns {ArrayBuffer[]}
      */
     decode(source) {
-        /** @type {Uint8Array} */
-        var src;
-        if(ArrayBuffer.isView(source)) src=new Uint8Array(source.buffer,source.byteOffset,source.byteLength);
-        else src=new Uint8Array(source);
+        var src = Deflate.asUint8Array(source);
         /** @type {ArrayBuffer[]} */
         var res=[];
         for(var i=0; i<src.length; ) {
@@ -883,13 +881,10 @@ const Gzip=Object.freeze({
         }
         return res;
     },
-    /** @param {ArrayBufferLike|ArrayBufferView|ArrayLike<number>} data */
+    /** @param {ByteReadable} data */
     encode(data) {
-        /** @type {Uint8Array} */
-        var src;
-        if(ArrayBuffer.isView(data)) src=new Uint8Array(data.buffer,data.byteOffset,data.byteLength);
-        else src=new Uint8Array(data);
-        var comp = Deflate.compress(data);
+        var src=Deflate.asUint8Array(data);
+        var comp = Deflate.encode(data);
         var res = new ArrayBuffer(comp.byteLength + 18);
         var srca = new Uint8Array(comp);
         var resa = new Uint8Array(res);
@@ -912,8 +907,8 @@ const Gzip=Object.freeze({
         table: null,
         /** Make the table for a fast CRC. */
         make_table() {
-            if(this.table) return;
-            this.table = Array(256);
+            /** @type {number[]} */
+            const table = Array(256);
             for(var n = 0; n < 256; n++) {
                 var c = n;
                 for(var k = 0; k < 8; k++) {
@@ -924,8 +919,9 @@ const Gzip=Object.freeze({
                         c = c >>> 1;
                     }
                 }
-                this.table[n] = c;
+                table[n] = c;
             }
+            return table;
         },
         /**
          * Update a running crc with the bytes buf[0..len-1] and return
@@ -938,8 +934,8 @@ const Gzip=Object.freeze({
          **/
         update_crc(crc, data) {
             var c = ~crc;
-            if(!this.table) this.make_table();
-            for(var n = 0; n < data.length; n++) { // @ts-ignore this.table is not null because this.make_table() is called
+            if(!this.table) this.table = this.make_table();
+            for(var n = 0; n < data.length; n++) {
                 c = this.table[(c ^ data[n]) & 0xff] ^ c >>> 8;
             }
             return ~c;
@@ -953,10 +949,14 @@ const Gzip=Object.freeze({
 
 /** https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT */
 class Zip {
+    static utils = Object.freeze({
+        /** @type {<T>(x:T)=>T} */
+        structuredClone: structuredClone.bind(null) || function(x) {return JSON.parse(JSON.stringify(x));}
+    });
     /** @type {Blob} */ #zipFile;
-    /** @type {{[path: string]: {offset: number, compSize: number, realSize: number, cdirOffset: number}}} */ #files;
-    /** @type {ArrayBuffer} */ #ab;
-    /** @type {DataView} */ #centralDirectory;
+    /** @type {{[path: string]: {offset: number, compSize: number, realSize: number, cdirOffset: number}}|undefined} */ #files;
+    /** @type {ArrayBuffer|undefined} */ #ab;
+    /** @type {DataView|undefined} */ #centralDirectory;
     get zipFile() {return this.#zipFile};
     get metadataLoaded() {return !!this.#files};
     get fileContentLoaded() {return !!this.#ab && !!this.#files};
@@ -976,13 +976,15 @@ class Zip {
     async loadAllFiles(progress={}) {
         progress.max=1.5;
         let zipFile=this.#zipFile;
-        let ab=this.#ab=await new Promise(function(resolve, reject) {
+        /** @type {ArrayBuffer} */
+        let ab=await new Promise(function(resolve, reject) {
             let r=new FileReader();
             r.onerror=()=>reject(r.error); // @ts-ignore
             r.onload=()=>resolve(r.result);
             r.onprogress=evt=>progress.value=evt.loaded/evt.total;
             r.readAsArrayBuffer(zipFile);
         });
+        this.#ab = ab;
         let searchStart=Math.max(0,this.#zipFile.size-65536-22);
         let searchRegion=new DataView(ab, searchStart);
         let centralDirectoryLength=0;
@@ -1174,7 +1176,7 @@ class Zip {
      * @returns {DataView}
      */
     getRawCentralHeader(path) {
-        if(!this.#files) throw new DOMException("Metadata is not loaded", "InvalidStateError");
+        if(!this.#files || !this.#centralDirectory) throw new DOMException("Metadata is not loaded", "InvalidStateError");
         path=this.root+path;
         if(!(path in this.#files)) throw new DOMException("File not found", "NotFoundError");
         let fileInfo=this.#files[path];
@@ -1241,6 +1243,7 @@ class Zip {
     listDirectoryContent(path) {
         path=this.root+path;
         if(!path.endsWith("/") && path !== "") throw new DOMException("Path must end with '/'", "SyntaxError");
+        /** @type {Set<string>} */
         let res=new Set();
         for(let name in this.#files) {
             if(!name.startsWith(path)) continue;
@@ -1252,10 +1255,6 @@ class Zip {
         return [...res];
     }
 }
-Zip.utils=Object.freeze({
-    /** @type {<T>(x: T) => T} */
-    structuredClone: structuredClone.bind(null) || function(x) {return JSON.parse(JSON.stringify(x));}
-});
 
 /**
  * Allows copying and skipping a specific amount of bytes in a ReadableStream
@@ -1387,9 +1386,13 @@ class ZipMaker {
         this.files.push({offset: this.offset, cdir: zip.getRawCentralHeader(path)});
         this.offset += blob.size;
     }
-    async copyFiles(/** @type {Zip} */ zip, /** @type {Iterable<string>} */ _paths, progressElem = {}) {
+    /**
+     * @param zip The Zip whose files will be copied. The metadata of the Zip must be loaded
+     */
+    async copyFiles(/** @type {Zip} */ zip, /** @type {Iterable<string>} */ _paths, /** @type {{max?:number, value?:number}} */ progressElem = {}) {
         const writer = this.tr.writable.getWriter();
         const files = zip._getAllMetadata();
+        if(!files) throw new Error("the Zip's metadata must be loaded before passing it to ZipMaker.copyFiles()");
         const paths = [...new Set(_paths)];
         if(paths.length === 0) return;
         paths.sort((a, b)=>files[a].offset-files[b].offset);
