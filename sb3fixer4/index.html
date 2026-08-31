@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sb3 bug fixer</title>
+  <script>
+  addEventListener("error", evt => alert([evt.error, evt.lineno, evt.colno]));
+  </script>
+  <script src="../gzip.js"></script>
+  <script src="opcodeinfo.js"></script>
+  <style>
+    /*.warnings>* {
+      padding-left: 1.6em;
+      background-image: linear-gradient(to top, white 0.2em, transparent 0.2em, 0.3em, white 0.3em), conic-gradient(from 150deg at 0.8em 0em, #eeaa00 60deg, transparent 60deg);
+      background-size: 0.15em 0.7em, 1.6em 1em;
+      background-position: 0.725em 0.55em, 0 0.3em;
+      background-repeat: no-repeat;
+    }*/
+    .warnings>*::before {
+      content: "\26a0\fe0f";
+    }
+    li {
+      margin-bottom: 0.5em;
+    }
+  </style>
+</head>
+
+<body>
+  <noscript>
+    <strong>This thing needs JavaScript but it doesn't seem to work</strong>
+    <hr>
+  </noscript>
+  <div>Makes some redundant parts of the <code>project.json</code> match with each other, and deletes some unnecessary or problematic things</div>
+  <small><i>This website is not endorsed by Scratch nor by TurboWarp. The loaded files are processed locally on your computer (I think)</i></small>
+  <hr>
+  <ul>
+    <li>Load project from Scratch (<a href="https://docs.turbowarp.org/unshared-projects#developers">uses TurboWarp's proxy</a>). Recommended, as Scratch downloads a modified JSON when you click <q>Save to your computer</q>:
+      <div>
+        <input type="text" placeholder="https://scratch.mit.edu/projects/60917032/" id="iurlid" />
+        <input type="button" id="burlid" value="Load from URL" /></div>
+    </li>
+    <li>Load sb3 or project.json file:
+      <div>
+        <input type="file" id="ifile" />
+        <input type="button" value="Load from file" id="bfile" />
+      </div>
+    </li>
+  </ul>
+  <hr>
+  <div>Output:
+    <pre style="height: 8.5lh; overflow-y: scroll;"><output id="ologs"></output></pre>
+  </div>
+  <div>
+    <output class="warnings" id="warnings"></output>
+    <output id="ouser"></output>
+  </div>
+  <script src="sb3fixer4.js"></script>
+</body>
+
+</html>
