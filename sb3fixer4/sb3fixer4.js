@@ -7,7 +7,7 @@ var options = {
     deleteGhostBlocks: true,
     /** 0=don't, 1=floating reporters, 2=anything not connected to hat blocks. It won't delete the blocks if there are comments attached to them */
     deleteDisconnectedBlocks: 1,
-    unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks
+    unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks. Currently it needs removeGhostBlocks to happen before it, otherwise it's possible that ghost blocks cause a regular topLevel block to get removed
     splitDoublyReferencedBlocks: true, // can freeze if the project has excessive double referencing, but prevents some bugs in the editor
     repairParentReferences: true, // fixes some glitches related to glowing blocks, including some that can freeze the project's display
     fillSemiOptionalProperties: true, // I think Scratch already does this
@@ -654,6 +654,11 @@ function fixProject(project, options) {
     const varLists = targets.map(sprite => sprite == Stage ? globals : new VariableManager(sprite.name, globals));
     const blockLists = targets.map(sprite => new BlockSpagetti(Object.setPrototypeOf(sprite.blocks, null)));
     for (let i = 0; i < targets.length; i++) {
+        if (options.unTopLevelifyReferencedBlocks) {
+            const count = unTopLevelifyReferencedBlocks(blockLists[i]);
+            if (count > 0)
+                log(`${targets[i].name}: removed topLevel mark from ${count} referenced blocks`);
+        }
         deleteProblematicBlocks(blockLists[i], targets[i], options);
     }
     if (options.skipVariableFixes) {
@@ -1014,26 +1019,34 @@ class BlockSpagetti {
             return { block: id, id, pos: pos };
         }
     }
+    /**
+     * @param block the block whose descendants will be added
+     * @param outputSet a set that (before and after calling this function) must have the property that if it contains a block then it also contains its descendants
+     */
+    addDescendantsOfBlockToSet(block, outputSet) {
+        const stack = [block];
+        let b;
+        while (b = stack.pop()) {
+            for (const fwd of this.getFwdRefs(b)) {
+                if (!fwd.block || outputSet.has(fwd.block))
+                    continue;
+                outputSet.add(fwd.block);
+                stack.push(fwd.block);
+            }
+        }
+    }
     /** @returns how many blocks were deleted */
     deleteBlocksWithoutSatisfyingAncestor(condition) {
         let count = 0;
-        const keepBlock = new Set();
-        const keepDescendants = (block) => {
-            if (keepBlock.has(block))
-                return;
-            keepBlock.add(block);
-            for (const fwd of this.getFwdRefs(block)) {
-                if (fwd.block) {
-                    keepDescendants(fwd.block);
-                }
-            }
-        };
+        const keptBlocks = new Set();
         for (const info of this.blocks()) {
-            if (condition(info))
-                keepDescendants(info.block);
+            if (condition(info)) {
+                this.addDescendantsOfBlockToSet(info.block, keptBlocks);
+                keptBlocks.add(info.block);
+            }
         }
         for (const { block, ptr: blockPtr } of this.blocks()) {
-            if (keepBlock.has(block))
+            if (keptBlocks.has(block))
                 continue;
             // no longer count this block as a referencer
             this.forgetConnections(block);
@@ -1206,26 +1219,33 @@ function deleteProblematicBlocks(spagetti, sprite, options) {
     if (deleteCount > 0)
         log(`${sprite.name}: deleted ${deleteCount} blocks`);
 }
-function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
-    var _a, _b;
-    var _c;
-    if (options.unTopLevelifyReferencedBlocks) {
-        let count = 0;
-        for (const { block } of spagetti.blocks()) {
-            if (!spagetti.hasReferencers(block))
-                continue;
-            if (Array.isArray(block) && block.length > 3) {
+function unTopLevelifyReferencedBlocks(spagetti) {
+    let count = 0;
+    const referenced = new Set();
+    for (const { block } of spagetti.blocks()) {
+        if (isMarkedTopLevel(block)) {
+            spagetti.addDescendantsOfBlockToSet(block, referenced);
+        }
+    }
+    for (const block of referenced) {
+        if (Array.isArray(block)) {
+            if (block.length > 3) {
                 block.length = 3;
                 count += 1;
             }
-            if (isJSONObject(block) && block.topLevel) {
+        }
+        else {
+            if (block.topLevel) {
                 block.topLevel = false;
                 count += 1;
             }
         }
-        if (count > 0)
-            log(`${sprite.name}: removed topLevel mark from ${count} referenced blocks`);
     }
+    return count;
+}
+function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
+    var _a, _b;
+    var _c;
     if (options.fillSemiOptionalProperties) {
         let count = 0;
         for (const { block } of spagetti.blocks()) {
