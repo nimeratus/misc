@@ -15,7 +15,8 @@ type ThingS = Thing&{[key:symbol]:unknown};
 type CollisionOptions = {deleteCollidingUnusedVariables: boolean, deleteAllUnusedVariables: boolean, mergeCollidingVariables: boolean, renameCollidingVariables: boolean};
 type VariableOptions = CollisionOptions & {stringifyVariables:boolean, replaceVariableIds: boolean, removeVariableNames: boolean};
 type DeletedBlockOptions = { deleteGhostBlocks: boolean; deleteInvisibleBlocks: boolean; /** 0=don't, 1=floating reporters, 2=anything not connected to hat blocks */ deleteDisconnectedBlocks: 0 | 1 | 2; deleteSuspiciousOpcodes: boolean; deleteUnknownOpcodes: boolean; };
-type BlockFixOptions = { unTopLevelifyReferencedBlocks: boolean; fillSemiOptionalProperties: boolean; copyCustomInputIdsFromDefinition: boolean; deleteInvalidCustomBlockInputs: boolean; replaceCustomInputIds: boolean; removeRedundantMutations: boolean; cutInvalidReferences: boolean; splitDoublyReferencedBlocks: boolean; repairParentReferences: boolean; replaceBlockIds: boolean; } & DeletedBlockOptions;
+type BlockFixOptions = { unTopLevelifyReferencedBlocks: boolean; fillSemiOptionalProperties: boolean; copyCustomInputIdsFromDefinition: boolean; cutInvalidReferences: boolean; splitDoublyReferencedBlocks: boolean; repairParentReferences: boolean; replaceBlockIds: boolean; } & CustomBlockOptions & DeletedBlockOptions;
+type CustomBlockOptions = { deleteInvalidCustomBlockInputs: boolean; replaceCustomInputIds: boolean; removeRedundantMutations: boolean; deleteDuplicateDefinitions: boolean };
 type ProjectFixOptions = {idPrefix: string, deleteLocalBroadcasts: boolean, deleteUnusedMonitors: boolean, skipVariableFixes: boolean} & (VariableOptions|{skipVariableFixes:true}) & BlockFixOptions;
 
 var options:ProjectFixOptions = {
@@ -25,12 +26,13 @@ var options:ProjectFixOptions = {
   deleteGhostBlocks: true,
   /** 0=don't, 1=floating reporters, 2=anything not connected to hat blocks. It won't delete the blocks if there are comments attached to them */
   deleteDisconnectedBlocks: 1,
-  unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks. Currently it needs removeGhostBlocks to happen before it, otherwise it's possible that ghost blocks cause a regular topLevel block to get removed
+  unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks
   splitDoublyReferencedBlocks: true, // can freeze if the project has excessive double referencing, but prevents some bugs in the editor
   repairParentReferences: true, // fixes some glitches related to glowing blocks, including some that can freeze the project's display
   fillSemiOptionalProperties: true, // I think Scratch already does this
   replaceBlockIds: false,
   copyCustomInputIdsFromDefinition: true,
+  deleteDuplicateDefinitions: true,
   replaceCustomInputIds: true,
   removeRedundantMutations: true,
   //deleteExcessCustomBlockInputDefaults: true, // can break certain hacked blocks
@@ -963,7 +965,7 @@ class BlockSpagetti {
     this.blocksToReferences.clear();
     this.blocksToIDs.clear();
     for(const {id, block} of this.blocks()) {
-      this.readdConnections(block, []);
+      this.readdInFwdConnections(block, []);
       this.blocksToIDs.set(block, id);
     }
   }
@@ -1076,7 +1078,7 @@ class BlockSpagetti {
       if(keptBlocks.has(block)) continue;
         
       // no longer count this block as a referencer
-      this.forgetConnections(block);
+      this.forgetInFwdConnections(block);
 
       this.blocksToReferences.delete(block);
       this.blocksToIDs.delete(block);
@@ -1092,7 +1094,7 @@ class BlockSpagetti {
    * forgets all connections of the block
    * @returns the fwd-references of the blocks whose back-reference was deleted
    */
-  forgetConnections(block:Block) {
+  forgetInFwdConnections(block:Block) {
     let fwds=[];
     for(const fwd of this.getFwdRefs(block)) {
       if(!fwd.block) continue;
@@ -1106,7 +1108,7 @@ class BlockSpagetti {
    * scans the block for connections
    * @param checkForDeletion the value `this.forgetConnections()` returned before making changes to the block's JSON
    */
-  readdConnections(block:Block, checkForDeletion:Exclude<ReturnType<typeof this.toFwdRef>,undefined>[]) {
+  readdInFwdConnections(block:Block, checkForDeletion:Exclude<ReturnType<typeof this.toFwdRef>,undefined>[]) {
     for(const fwd of this.getFwdRefs(block)) {
       if(fwd.block) {
         this.addRef(block, fwd.block, fwd.pos);
@@ -1115,6 +1117,7 @@ class BlockSpagetti {
     this.deleteUnreferenced(checkForDeletion);
   }
 
+  /** deletes the block; if recursive, it also deletes the inputs and the blocks below it */
   deleteBlock(blockPtr: Pointer<Block>, recursive=true) {
     const block=blockPtr.read();
     blockPtr.deleteValue();
@@ -1122,7 +1125,35 @@ class BlockSpagetti {
     if(!isJSONObject(block)) return;
 
     // no longer count this block as a referencer
-    this.forgetConnections(block);
+    this.forgetInFwdConnections(block);
+
+    // erase the reference from the blocks that referenced this
+    const referencers = this.blocksToReferences.get(block);
+    for(const [referencer, positions] of referencers||[]) {
+      referencers!.delete(referencer);
+      for(const pos of positions) {
+        // null wasn't allowed until now only because it can't store null while the block that it references exists
+        (pos as Pointer<string|Block|null>).write(null);
+      }
+    }
+    this.blocksToReferences.delete(block);
+
+    this.blocksToIDs.delete(block);
+
+    if(recursive) {
+      this.deleteUnreferenced(this.getFwdRefs(block));
+    }
+  }
+
+  /** deletes the block; if recursive, it also deletes the inputs, but it tries to attach the block below it to the block above it */
+  deleteBlockButKeepStack(blockPtr: Pointer<Block>, recursive=true) {
+    const block=blockPtr.read();
+    blockPtr.deleteValue();
+
+    if(!isJSONObject(block)) return;
+
+    // no longer count this block as a referencer
+    this.forgetInFwdConnections(block);
 
     // make the blocks that referenced this reference the next block instead
     let next = this.toFwdRef(new DataPos<"next",any>(block, "next"));
@@ -1144,8 +1175,8 @@ class BlockSpagetti {
         }
       }
     }
-
     this.blocksToReferences.delete(block);
+
     this.blocksToIDs.delete(block);
 
     if(recursive) {
@@ -1164,7 +1195,7 @@ class BlockSpagetti {
     while(currentList = stack.pop()) {
       for(const fwd of currentList) {
         if(fwd.block && !this.hasReferencers(fwd.block) && !isMarkedTopLevel(fwd.block)) {
-          const ptr:Pointer<Block> = fwd.id === "string" ? new DataPos(this.json, fwd.id) : (fwd.pos as Pointer<Block>);
+          const ptr:Pointer<Block> = isID(fwd.id) ? new DataPos<string,Block>(this.json, fwd.id) : (fwd.pos as Pointer<Block>);
           this.deleteBlock(ptr, false);
           stack.push(this.getFwdRefs(fwd.block));
         }
@@ -1172,12 +1203,15 @@ class BlockSpagetti {
     }
   }
 
-  /** @returns how many blocks were deleted */
+  /** 
+   * Deletes the blocks that don't satisfy the condition, and tries to attach the block below them to the block above them
+   * @returns how many blocks were deleted
+   */
   deleteBlocksThatDontSatisfy(condition:(block:BlockInfo)=>boolean) {
     let count = 0;
     for(const info of this.blocks()) {
       if(condition(info)) continue;
-      this.deleteBlock(info.ptr);
+      this.deleteBlockButKeepStack(info.ptr);
       count+=1;
     }
     return count;
@@ -1203,7 +1237,7 @@ class BlockSpagetti {
 function deleteProblematicBlocks(spagetti:BlockSpagetti, sprite:Sprite, options:DeletedBlockOptions) {
   const commentedBlockIds = new Set();
   for(const comment of Object.values(sprite.comments||{})) {
-    if(typeof comment.blockId==="string") commentedBlockIds.add(comment.blockId);
+    if(isID(comment.blockId)) commentedBlockIds.add(comment.blockId);
   }
   let deleteCount=0;
   const deleteGhostBlocks = options.deleteGhostBlocks || options.deleteInvisibleBlocks;
@@ -1224,7 +1258,7 @@ function deleteProblematicBlocks(spagetti:BlockSpagetti, sprite:Sprite, options:
     }
     else {
       // Scratch treats procedures_definition differently, so it doesn't appear in the extracted hat block list but for our purposes it should count as a hat block
-      if(options.deleteDisconnectedBlocks && block.opcode && typeof OpcodeType==="object" && OpcodeType[block.opcode]<options.deleteDisconnectedBlocks && block.opcode !== "procedures_definition" && !(typeof id==="string" && commentedBlockIds.has(id)) && typeof block.comment!=="string") return false;
+      if(options.deleteDisconnectedBlocks && block.opcode && typeof OpcodeType==="object" && OpcodeType[block.opcode]<options.deleteDisconnectedBlocks && block.opcode !== "procedures_definition" && !(isID(id) && commentedBlockIds.has(id)) && typeof block.comment!=="string") return false;
       // procedures_definition can also run if not marked as topLevel, so it doesn't count as a ghost block
       if(options.deleteGhostBlocks && !block.topLevel && (block.opcode !== "procedures_definition" || options.deleteInvisibleBlocks)) return false;
       if(options.deleteInvisibleBlocks && block.shadow) return false;
@@ -1238,7 +1272,7 @@ function deleteProblematicBlocks(spagetti:BlockSpagetti, sprite:Sprite, options:
     // delete invalid opcodes found inside a block stack
     deleteCount += spagetti.deleteBlocksThatDontSatisfy(isBlockValid);
   }
-  if(deleteCount>0) log(`${sprite.name}: deleted ${deleteCount} blocks`);
+  if(deleteCount>0) log(`${sprite.name}: deleted ${deleteCount} blocks that were unused or invalid`);
 }
 
 function unTopLevelifyReferencedBlocks(spagetti:BlockSpagetti) {
@@ -1309,11 +1343,11 @@ function doBlockFixes(spagetti: BlockSpagetti, sprite:Sprite, forbiddenIDs:Itera
     return spagetti.json[inputId];
   }
 
-  if(options.copyCustomInputIdsFromDefinition) {
-    let count = 0;
+  if(options.copyCustomInputIdsFromDefinition || options.deleteDuplicateDefinitions) {
+    const willBeDeleted = new Set<Pointer<Block>>;
     const firstPrototype = new Map<string, Mutation>();
     const firstDefinition = new Map<string, Mutation>();
-    for(const {block} of spagetti.blocks()) {
+    for(const {block, ptr, id} of spagetti.blocks()) {
       if(!isJSONObject(block)) continue;
       if(block.opcode === "procedures_prototype" && block.mutation?.proccode) {
         const proccode = block.mutation.proccode;
@@ -1324,40 +1358,53 @@ function doBlockFixes(spagetti: BlockSpagetti, sprite:Sprite, forbiddenIDs:Itera
         const custom_block = getInputBlock(block,"custom_block");
         if(!Array.isArray(custom_block) && custom_block?.mutation?.proccode) {
           const proccode = custom_block.mutation.proccode;
-          if(firstDefinition.has(proccode)) continue;
+          if(firstDefinition.has(proccode)) {
+            if(options.deleteDuplicateDefinitions) {
+              log(`${sprite.name}: deleting duplicate definition for ${proccode}`);
+              // do the deletion later, as we might need to also find its procedures_prototype part
+              willBeDeleted.add(ptr);
+            }
+            continue;
+          }
           firstDefinition.set(proccode, custom_block.mutation);
         }
       }
     }
-    for(const {block} of spagetti.blocks()) {
-      if(!isJSONObject(block)) continue;
-      let changed=false;
-      if(block.mutation && block.mutation.proccode) {
-        const proto = firstPrototype.get(block.mutation.proccode);
-        const def = firstDefinition.get(block.mutation.proccode);
-        if(!proto) continue;
-        if(block.opcode === "procedures_prototype") {
-          if(block.mutation.argumentdefaults !== proto.argumentdefaults) {
-            block.mutation.argumentdefaults = proto.argumentdefaults;
+    for(const ptr of willBeDeleted) {
+      spagetti.deleteBlock(ptr, true);
+    }
+    if(options.copyCustomInputIdsFromDefinition) {
+      let count = 0;
+      for(const {block} of spagetti.blocks()) {
+        if(!isJSONObject(block)) continue;
+        let changed=false;
+        if(block.mutation && block.mutation.proccode) {
+          const proto = firstPrototype.get(block.mutation.proccode);
+          const def = firstDefinition.get(block.mutation.proccode);
+          if(!proto) continue;
+          if(block.opcode === "procedures_prototype") {
+            if(block.mutation.argumentdefaults !== proto.argumentdefaults) {
+              block.mutation.argumentdefaults = proto.argumentdefaults;
+              changed=true;
+            }
+            if(def && block.mutation.warp !== def.warp) {
+              block.mutation.warp = def.warp;
+              changed = true;
+            }
+            if(block.mutation.argumentnames !== proto.argumentnames) {
+              block.mutation.argumentnames = proto.argumentnames;
+              changed = true;
+            }
+          }
+          if(block.mutation.argumentids !== proto.argumentids) {
+            block.mutation.argumentids = proto.argumentids;
             changed=true;
           }
-          if(def && block.mutation.warp !== def.warp) {
-            block.mutation.warp = def.warp;
-            changed = true;
-          }
-          if(block.mutation.argumentnames !== proto.argumentnames) {
-            block.mutation.argumentnames = proto.argumentnames;
-            changed = true;
-          }
         }
-        if(block.mutation.argumentids !== proto.argumentids) {
-          block.mutation.argumentids = proto.argumentids;
-          changed=true;
-        }
+        if(changed) count+=1;
       }
-      if(changed) count+=1;
+      if(count>0) log(`${sprite.name}: changed ${count} custom blocks`);
     }
-    if(count>0) log(`${sprite.name}: changed ${count} custom blocks`);
   }
 
   // should run after copyCustomInputIdsFromDefinition
@@ -1373,14 +1420,14 @@ function doBlockFixes(spagetti: BlockSpagetti, sprite:Sprite, forbiddenIDs:Itera
           continue;
         }
         if(isJSONObject(block.inputs)) {
-          const mightNeedDeleting = spagetti.forgetConnections(block);
+          const mightNeedDeleting = spagetti.forgetInFwdConnections(block);
           for(const [iname, iarr] of Object.entries(block.inputs)) {
             if(!argumentids.has(iname)) {
               delete block.inputs[iname];
               count+=1;
             }
           }
-          spagetti.readdConnections(block, mightNeedDeleting);
+          spagetti.readdInFwdConnections(block, mightNeedDeleting);
         }
       }
     }
@@ -1419,9 +1466,9 @@ function doBlockFixes(spagetti: BlockSpagetti, sprite:Sprite, forbiddenIDs:Itera
               newInputs[argumentids.get(iname)]=iarr;
             }
           }
-          const mightNeedDeleting = spagetti.forgetConnections(block);
+          const mightNeedDeleting = spagetti.forgetInFwdConnections(block);
           block.inputs = newInputs;
-          spagetti.readdConnections(block, mightNeedDeleting);
+          spagetti.readdInFwdConnections(block, mightNeedDeleting);
         }
       }
     }
@@ -1520,16 +1567,16 @@ function doBlockFixes(spagetti: BlockSpagetti, sprite:Sprite, forbiddenIDs:Itera
         for(let i=allowedBackrefs; i<back.length; i++) {
           splitCount += 1;
           const altId = idGenerator.next().value;
-          if(typeof altId !== "string") throw new Error("ID generator has been exhausted");
+          if(!isID(altId)) throw new Error("ID generator has been exhausted");
           const blockCopy = deepClone(block);
           if(isJSONObject(blockCopy) && blockCopy.topLevel) blockCopy.topLevel = false;
           spagetti.json[altId]=blockCopy;
           spagetti.blocksToIDs.set(blockCopy, altId);
           // TODO: optimize this so that it doesn't search all inputs of the referencer every time
-          spagetti.forgetConnections(back[i].referencer);
+          spagetti.forgetInFwdConnections(back[i].referencer);
           back[i].refPos.write(altId);
-          spagetti.readdConnections(back[i].referencer, []);
-          spagetti.readdConnections(blockCopy, []);
+          spagetti.readdInFwdConnections(back[i].referencer, []);
+          spagetti.readdInFwdConnections(blockCopy, []);
         }
         back.length=allowedBackrefs;
         for(const fwd of spagetti.getFwdRefs(block)) {
