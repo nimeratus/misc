@@ -448,7 +448,7 @@ class VariableManager {
   }
   findLocalByName(v:{list:VariableListName,name:unknown}|null|undefined):Variable|undefined {
     if (!v) return;
-    this.nameMaps[v.list].get(v.name);
+    return this.nameMaps[v.list].get(v.name);
   }
   findByName(v:{list:VariableListName,name:unknown}|null|undefined):Variable|undefined {
     if (!v) return;
