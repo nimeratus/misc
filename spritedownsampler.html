@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Sprite downsampler</title>
+<script src="gzip.js"></script>
+<style>
+.warning::before {
+display: inline-block;
+content: "!";
+background-color: #ddaa00;
+clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+--background: conic-gradient(at 50% 0%, transparent 150deg, #cc8800 210deg, #cc8800 210deg, transparent 210deg);
+width: 1em;
+height: 1em;
+text-align: center;
+color: white;
+}
+progress::before {
+content: attr(value) "/" attr(max);
+margin-top: 1lh;
+display: block;
+}
+</style>
+</head>
+<body>
+<h1>Sprite downsampler</h1>
+<p>Downscales all costumes in the given sprites to 1/2 size, and changes the blocks so that the costumes appear the same size as before. In the resulting code the (size) block gets substituted with something that doesn't always rounds to integers. Because of a Scratch bug, the behaviour of the &lt;touching ...?&gt; blocks can change even if the costume looks the same after downsampling.</p>
+<div>sb3 file: <input type="file" id="fi"/><button type="button" id="fopenbtn">open</button></div>
+<div>Select sprites:</div>
+<div><select multiple id="sps" disabled></select></div>
+<div>or load sprite list (list of names in JSON format): <input type="file" id="filist" disabled/></div>
+<div><button type="button" id="OKbtn" disabled>OK</button><progress hidden id="p"></progress><a id="a"></a></div>
+<div id="logs"></div>
+<script>
+var fi=document.getElementById("fi");
+var filist=document.getElementById("filist");
+var fopenbtn=document.getElementById("fopenbtn");
+var OKbtn=document.getElementById("OKbtn");
+var sps=document.getElementById("sps");
+var p=document.getElementById("p");
+var a=document.getElementById("a");
+var ctx=document.createElement("canvas").getContext("2d", {willReadFrequently: true});
+var zip, project, targets, sprites, zipout, jsonFilename, file;
+fopenbtn.onclick = async function() {
+  controlsDisabled(true);
+  try {
+    file = fi.files[0];
+    zip = new Zip(file);
+    await zip.loadAllFiles();
+    var decoder = new TextDecoder();
+    if(zip.hasFile("project.json")) project = JSON.parse(decoder.decode(zip.getFileContent(jsonFilename="project.json")));
+    else if(zip.hasFile("sprite.json")) project = JSON.parse(decoder.decode(zip.getFileContent(jsonFilename="sprite.json")));
+    else throw new Error("Can't find project.json");
+    targets = project.targets ? [...project.targets] : [project];
+    sprites = targets.filter(x=>x && !x.isStage);
+    sps.size=Math.min(sprites.length,20);
+    sps.innerHTML="";
+    for(let i=0; i<sprites.length; i++) sps.appendChild(new Option(sprites[i].name, i));
+  }
+  catch(err) {
+    console.error(err);
+    alert(err);
+  }
+  finally {
+    controlsDisabled(false);
+  }
+};
+function controlsDisabled(bool) {
+  fopenbtn.disabled=bool;
+  OKbtn.disabled=bool;
+  sps.disabled=bool;
+  filist.disabled=bool;
+}
+OKbtn.onclick = async function() {
+  controlsDisabled(true);
+  try {
+    p.removeAttribute("value");
+    p.hidden=false;
+    a.hidden=true;
+    let blob = await downscaleSelected(p);
+    let url = URL.createObjectURL(blob);
+    a.href=url;
+    a.download="small-"+file.name;
+    a.innerText="download "+a.download;
+    a.hidden=false;
+  }
+  catch(err) {
+    console.error(err);
+    alert(err);
+  }
+  finally {
+    fopenbtn.disabled=false;
+    //controlsDisabled(false);
+  }
+};
+filist.onchange=async function() {
+  controlsDisabled(true);
+  try {
+    let json = JSON.parse(await filist.files[0].text());
+    json = [...json];
+    for(let option of sps.options) option.selected=false;
+    for(let sprite of json) {
+      let selection = {name: null, idx: null};
+      if(typeof sprite === "string") selection.name=sprite;
+      if(typeof sprite === "number") selection.idx=sprite;
+      if(typeof sprite === "object") selection=sprite;
+      if(
+        selection.idx != null && !isNaN(+selection.idx) &&
+        (sprites[+selection.idx].name==selection.name || !selection.name)
+      ) {
+        sps.options[+selection.idx].selected=true;
+      }
+      else {
+        let idx = sprites.findIndex(sprite=>sprite.name==selection.name);
+        if(idx >= 0) sps.options[idx].selected=true;
+      }
+    }
+  }
+  catch(err) {
+    console.error(err);
+    alert(err);
+  }
+  finally {
+    controlsDisabled(false);
+  }
+};
+async function downscaleSelected(progress) {
+  zipout = new ZipMaker();
+  let downscaledSpriteNames = new Set();
+  let downscaledCostumes = {__proto__: null};
+  let assetIds = new Set();
+  for(let i=0; i<targets.length; i++) {
+    if(targets[i]&&Array.isArray(targets[i].costumes)) {
+      for(let costume of targets[i].costumes) assetIds.add(costume.assetId);
+    }
+  }
+  let idCounter = 0;
+  function nextAssetId() {
+    let assetId;
+    do {
+      assetId = idCounter.toString(16).padStart(32, "0");
+      idCounter += 1;
+    } while(assetIds.has(assetId));
+    return assetId;
+  }
+  let globalVarIDs = new Set();
+  for(let target of targets) {
+    if(target && target.isStage) getVarIds(target, globalVarIDs);
+  }
+  let N=0;
+  for(let i=0; i<sps.selectedOptions.length; i++) {
+    let sprite=sprites[sps.selectedOptions[i].value];
+    if(sprite && Array.isArray(sprite.costumes)) N+=sprite.costumes.length;
+  }
+  progress.max=N;
+  progress.value=0;
+  for(let i=0; i<sps.selectedOptions.length; i++) {
+    let sprite=sprites[sps.selectedOptions[i].value];
+    downscaledSpriteNames.add(sprite.name);
+    for(let i=0; i<sprite.costumes.length; i++) {
+      let assetId = sprite.costumes[i].assetId;
+      let fileExt;
+      if(typeof sprite.costumes[i].md5ext === "string") {
+        fileExt = (sprite.costumes[i].md5ext.match("\.[^\.]*$") || [""])[0];
+      }
+      else if(typeof sprite.costumes[i].dataFormat === "string") {
+        fileExt = "."+sprite.costumes[i].dataFormat;
+      }
+      let oldfname = assetId+fileExt;
+      if(!(oldfname in downscaledCostumes)) {
+        let newfname = downscaledCostumes[oldfname] = nextAssetId()+fileExt;
+        if(zip.hasFile(oldfname)) {
+          await zipout.addFile(await downscaleImage(await zip.getFileContent(oldfname), fileExt), newfname);
+        }
+        else {
+          console.warn("Can't find %o", oldfname);
+        }
+      }
+      let newfname = downscaledCostumes[oldfname];
+      sprite.costumes[i].assetId = newfname.slice(0,32);
+      if(sprite.costumes[i].md5ext) sprite.costumes[i].md5ext=newfname;
+      if(sprite.costumes[i].rotationCenterX) sprite.costumes[i].rotationCenterX/=2;
+      if(sprite.costumes[i].rotationCenterY) sprite.costumes[i].rotationCenterY/=2;
+      progress.value+=1;
+    }
+    replaceSizeBlocks(sprite, globalVarIDs);
+    sprite.size*=2;
+  }
+  for(let i=0; i<targets.length; i++) {
+    replaceSensingOfBlocks(targets[i], globalVarIDs, downscaledSpriteNames);
+  }
+  let resultJSONFile = new Blob([JSON.stringify(project)], {type: "application/json"});
+  await zipout.addFile(resultJSONFile, jsonFilename);
+  await zipout.copyFiles(zip, zip.listDirectoryContent("").filter(x=>x&&!x.endsWith(".json")), progress);
+  return await zipout.generateZip();
+}
+const svgNamespaceURI="http://www.w3.org/2000/svg";
+async function downscaleImage(buffer, fileExt) {
+  if(fileExt === ".svg") {
+    let svgstring = new TextDecoder().decode(buffer);
+    let svgdoc = new DOMParser().parseFromString(svgstring, "image/svg+xml");
+    let svg=svgdoc.documentElement;
+    let width = svg.hasAttribute("width")?svg.width.baseVal.value:svg.viewBox.baseVal.width;
+    if(!isNaN(width)) svg.width.baseVal.value=width/2;
+    let height = svg.hasAttribute("height")?svg.height.baseVal.value:svg.viewBox.baseVal.height;
+    if(!isNaN(height)) svg.height.baseVal.value=height/2;
+    let scaler = svgdoc.createElementNS(svgNamespaceURI, "g");
+    scaler.style.transform="scale(0.5)";
+    scaler.style.transformOrigin="0 0";
+    while(svg.firstChild) scaler.appendChild(svg.firstChild);
+    svg.appendChild(scaler);
+    let hasViewBox = svg.hasAttribute("viewBox");
+    svg.viewBox.baseVal.width=hasViewBox?svg.viewBox.baseVal.width/2:width/2;
+    svg.viewBox.baseVal.height=hasViewBox?svg.viewBox.baseVal.height/2:height/2;
+    svg.viewBox.baseVal.x/=2;
+    svg.viewBox.baseVal.y/=2;
+    let resultstr = new XMLSerializer().serializeToString(svgdoc);
+    return new Blob([resultstr],{type: "image/svg+xml"});
+  }
+  else {
+    let img = await createImageBitmap(new Blob([buffer], {type: "image/"+fileExt.slice(1)}));
+    ctx.canvas.width=Math.ceil(img.width/2);
+    ctx.canvas.height=Math.ceil(img.height/2);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(img, 0, 0, ctx.canvas.width, ctx.canvas.height);
+    img.close();
+    return new Promise((res,err)=>
+      ctx.canvas.toBlob(
+        blob=>blob?res(blob):err(new Error("Couldn't save PNG: canvas.toBlob() failed")),
+        "image/png"
+      )
+    );
+  }
+}
+function getVarIds(sprite, set) {
+  if(sprite && sprite.variables && typeof(sprite.variables)==="object") {
+    for(let varID in sprite.variables) set.add(varID);
+  }
+  if(sprite && sprite.lists && typeof(sprite.lists)==="object") {
+    for(let varID in sprite.lists) set.add(varID);
+  }
+  if(sprite && sprite.broadcasts && typeof(sprite.broadcasts)==="object") {
+    for(let varID in sprite.broadcasts) set.add(varID);
+  }
+}
+function replaceSizeBlocks(sprite, globalVarIDs) {
+  if(!sprite || !sprite.blocks || typeof(sprite.blocks)!=="object") return;
+  let localVarIDs = new Set();
+  getVarIds(sprite, localVarIDs);
+  let nextId = 0;
+  function createBlockId() {
+    let res;
+    do {
+      res = "x"+nextId.toString(36);
+      nextId+=1;
+    } while((res in sprite.blocks) || localVarIDs.has(res) || globalVarIDs.has(res));
+    return res;
+  }
+  // Object.keys won't include the new blocks that we add
+  for(let blockId of Object.keys(sprite.blocks)) {
+    let block=sprite.blocks[blockId];
+    if(!block) continue;
+    switch(block.opcode) {
+      // set size larger to compensate downscaled costumes
+      case "looks_setsizeto":
+      case "looks_changesizeby":
+        let inputName = block.opcode=="looks_setsizeto"?"SIZE":"CHANGE";
+        if(!block.inputs || !block.inputs[inputName]) break;
+        // multiply by 2 to cancel the downscaled costumes
+        let mult = {
+          opcode: "operator_multiply",
+          parent: blockId,
+          inputs: {NUM1: [...block.inputs[inputName]], NUM2: [1,[4,2]]},
+          next: null,
+          fields: {},
+          shadow: false,
+          topLevel: false
+        };
+        let multId=createBlockId();
+        sprite.blocks[multId]=mult;
+        block.inputs[inputName][1]=multId;
+        break;
+      // divide the value by 2 as we set sprite size larger
+      case "looks_size":
+        let sizeId = createBlockId();
+        sprite.blocks[sizeId]=block;
+        let div = {
+          opcode: "operator_divide",
+          parent: block.parent,
+          inputs: {NUM1: [3,sizeId,[4,0]], NUM2: [1,[4,2]]},
+          next: null,
+          fields: {},
+          shadow: false,
+          topLevel: block.topLevel
+        };
+        block.parent=blockId;
+        block.topLevel=false;
+        if("x" in block) div.x=block.x;
+        if("y" in block) div.y=block.y;
+        sprite.blocks[blockId]=div;
+        break;
+      // we don't change any more blocks here
+      // sensing_of is handled in a different function that is called for more sprites
+    }
+  }
+}
+function replaceSensingOfBlocks(sprite, globalVarIDs, downscaledSprites) {
+  let hasProblem=false;
+  if(!sprite || !sprite.blocks || typeof(sprite.blocks)!=="object") return;
+  let localVarIDs = new Set();
+  getVarIds(sprite, localVarIDs);
+  let nextId = 0;
+  function createBlockId() {
+    let res;
+    do {
+      res = "x"+nextId.toString(36);
+      nextId+=1;
+    } while((res in sprite.blocks) || localVarIDs.has(res) || globalVarIDs.has(res));
+    return res;
+  }
+  // Object.keys won't include the new blocks that we add
+  for(let blockId of Object.keys(sprite.blocks)) {
+    let block=sprite.blocks[blockId];
+    if(!block || block.opcode !== "sensing_of") continue;
+
+    // check if the block will read the size of the target
+    let maybeNotSize = false;
+    if(block.inputs && block.inputs.PROPERTY) {
+      maybeNotSize = true;
+    }
+    else if(!block.fields || !block.fields.PROPERTY || block.fields.PROPERTY[0] != "size") {
+      // certainly won't read the size of something
+      continue;
+    }
+    
+    // check if the block will read from a downscaled sprite
+    let maybeNotDownscaled = false;
+    if(block.inputs && block.inputs.OBJECT) {
+      if(
+        Array.isArray(block.inputs.OBJECT[1]) &&
+        block.inputs.OBJECT[1][0] < 11 &&
+        !downscaledSprites.has(block.inputs.OBJECT[1][1])
+      ) {
+        // constant input, not a downscaled sprite
+        continue;
+      }
+      else if(
+        typeof(block.inputs.OBJECT[1])==="string" &&
+        sprite.blocks[block.inputs.OBJECT[1]] &&
+        sprite.blocks[block.inputs.OBJECT[1]].opcode === "sensing_of_object_menu" &&
+        (!sprite.blocks[block.inputs.OBJECT[1]].inputs || !sprite.blocks[block.inputs.OBJECT[1]].inputs.OBJECT)
+      ) {
+        // constant input
+        if(!sprite.blocks[block.inputs.OBJECT[1]].fields || !downscaledSprites.has(sprite.blocks[block.inputs.OBJECT[1]].fields.OBJECT[0])) {
+          // isn't a downscaled sprite
+          continue;
+        }
+      }
+      else {
+        // can't prove constant
+        maybeNotDownscaled = true;
+      }
+    }
+    if(maybeNotDownscaled || maybeNotSize) hasProblem=true;
+    else {
+      // proved that the block reads the size of a downscaled sprite
+      // divide the value by 2 as we set sprite size larger when compensating downscaled costumes
+      let sizeId = createBlockId();
+      sprite.blocks[sizeId]=block;
+      let div = {
+        opcode: "operator_divide",
+        parent: block.parent,
+        inputs: {NUM1: [3,sizeId,[4,0]], NUM2: [1,[4,2]]},
+        next: null,
+        fields: {},
+        shadow: false,
+        topLevel: block.topLevel
+      };
+      block.parent=blockId;
+      block.topLevel=false;
+      if("x" in block) div.x=block.x;
+      if("y" in block) div.y=block.y;
+      sprite.blocks[blockId]=div;
+    }
+  }
+  if(hasProblem) {
+    let msg = `In the ${JSON.stringify(sprite.name)} sprite, couldn't decide if some ([size v] of (...)) blocks can get the size of downscaled sprites, in which case it will return 2x larger number than before.`;
+    let div=document.createElement("div");
+    div.classList.add("warning");
+    div.innerText=msg;
+    document.getElementById("logs").appendChild(div);
+  }
+  return;
+}
+</script>
+</body>
+</html>
