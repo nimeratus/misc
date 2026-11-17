@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebM fixer (?)</title>
+    <style>
+        output {
+            display: flex;
+            flex-direction: row;
+        }
+    </style>
+</head>
+<body>
+    <p>This thing tries to make the videos recorded by <code>MediaRecorder</code> seekable by adding a <code>SeekHead</code> and a <code>Cues</code> element.</p>
+    <p>It doesn't fully conform to the WebM/Matroska specifications because it doesn't care about the document version number and it doesn't update the metadata about the last writer. The outputted video files sometimes crash Windows media player but idk why that happens. When I play the outputted videos in Chrome or VLC player then they seem to work fine</p>
+    <div><input type="file" id="f" accept="video/webm"/></div>
+    <div><label><button type="button" id="k">Choose output</button>&nbsp;<span id="kn" style="font: -webkit-control; font: -moz-button;">{Download}</span></label></div>
+    <div><button type="button" id="b">OK</button></div>
+    <div><output id="o"><a id="a"></a></output></div>
+    <script src="webmfixer.js"></script>
+</body>
+</html>
