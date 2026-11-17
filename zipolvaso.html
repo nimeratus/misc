@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Zip</title>
+<script>onerror=alert;</script>
+<script src="gzip.js"></script>
+</head>
+<body>
+<input type="file" oninput="megnyit(this.files[0]);"/>
+<div><output id="o"></output></div>
+<hr/>
+<div id="fajl">
+<div><output id="o2">...</output></div>
+<div><button type="button" disabled id="b">Kitömörít</button></div>
+<div><output id="o3"></output></div>
+</div>
+<script>
+var o=document.getElementById("o");
+var o2=document.getElementById("o2");
+var b=document.getElementById("b");
+var o3=document.getElementById("o3");
+if(!Zip) alert("gzip.js hiányzik");
+var zip;
+async function megnyit(f) {
+if(!f) return;
+o.innerHTML = o3.innerHTML = "";
+o2.innerText="..."; b.disabled=true;
+var p=document.createElement("progress");
+o.appendChild(p);
+zip = new Zip(f);
+await zip.loadMetadata(p);
+o.removeChild(p);
+var ul=document.createElement("ul");
+o.appendChild(ul);
+var paths = zip.listDirectoryContent("");
+addPaths(ul, "", paths);
+}
+o.addEventListener("click", onClick);
+var lastPath = "";
+function onClick(evt) {
+var elem = evt.target;
+if(elem.tagName == "SUMMARY") elem = elem.parentElement;
+if(elem.tagName == "DETAILS") {
+if(elem.querySelector("ul")) return;
+var ul=document.createElement("ul");
+elem.appendChild(ul);
+var paths=zip.listDirectoryContent(elem.parentElement.dataset.path);
+addPaths(ul, elem.parentElement.dataset.path, paths);
+}
+else if(elem.tagName == "LI") {
+try {
+lastPath = elem.dataset.path;
+var meret = zip.getFileSize(lastPath);
+o2.innerText = elem.dataset.path+"\n"+bytes(meret);
+b.disabled=false;
+}
+catch(err) {
+o2.innerText=err;
+}
+}
+else return;
+}
+function addPaths(ul, parent, paths) {
+for(var i=0; i<paths.length; i++) {
+var li=document.createElement("li");
+li.dataset.path = parent+paths[i];
+ul.appendChild(li);
+if(paths[i].endsWith("/")) {
+var d=document.createElement("details");
+li.appendChild(d);
+var s=document.createElement("summary");
+d.appendChild(s);
+s.innerText=paths[i];
+}
+else {
+li.innerText=paths[i];
+}
+}
+}
+function bytes(x) {
+var e=["B","KB","MB","GB","TB"];
+var i=0;
+while(x>=1024&&i+1<e.length) {
+x/=1024;
+i++;
+}
+return x.toFixed(1)+"\xA0"+e[i];
+}
+b.addEventListener("click",onClick2);
+async function onClick2(evt) {
+var div=document.createElement("div");
+var a=document.createElement("a");
+o3.appendChild(div);
+div.appendChild(a);
+a.innerText="...";
+a.download=lastPath;
+a.href=URL.createObjectURL(new Blob([await zip.getFileContentAsync(lastPath)]));
+a.innerText=a.download+" letöltése";
+}
+</script>
+</body>
+</html>
