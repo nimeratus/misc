@@ -25,9 +25,9 @@
     <form>
     <h1>sb3 bug fixer</h1>
     <div><label><input type="checkbox" name="fixBlocks" checked />Remove ghost blocks</label></div>
-    <div class="explanation">Blocks in the JSON that aren't marked as top level and aren't the descendants of top level blocks. They are invisible in the editor and they don't run, but they can cause things like variables/lists reappearing</div>
+    <div class="explanation">Blocks in the JSON that aren't marked as top level and aren't the descendants of top level blocks. They are invisible in the editor and they don't run (except when they do, like define blocks in hacked projects), but they can cause things like variables/lists reappearing</div>
     
-    <label><input type="checkbox" name="fixVariables" checked />Remove ghost lists/variables</label> <span class="warning">might changes project behavior</span>
+    <label><input type="checkbox" name="fixVariables" checked />Remove ghost lists/variables</label>
     <div class="explanation">Multiple variables in the same sprite, with the same name, but different ID. They also don't appear in the editor</div>
     
     <div><label>sb3 file: <input type="file" id="fi"/></label></div>
