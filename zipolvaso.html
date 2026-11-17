@@ -20,7 +20,7 @@ var o=document.getElementById("o");
 var o2=document.getElementById("o2");
 var b=document.getElementById("b");
 var o3=document.getElementById("o3");
-if(!window.Zip) alert("gzip.js hiányzik");
+try{Zip;}catch(error){alert("gzip.js hiányzik");}
 var zip;
 async function megnyit(f) {
   try{
@@ -106,3 +106,4 @@ a.innerText=a.download+" letöltése";
 </body>
 
 </html>
+
