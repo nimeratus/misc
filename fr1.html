@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>fraktálok</title><!-- érdekes cikk: https://www.chiark.greenend.org.uk/~sgtatham/newton/ -->
+<style>
+.canvas-toolbar {
+width: 256px;
+height: 64px;
+padding: 0;
+margin: 0;
+border: 0;
+background: none;
+display: flex;
+flex-direction: row;
+flex-wrap: nowrap;
+}
+.canvas-toolbar label.button, .canvas-toolbar>.button-container, .canvas-toolbar label.button>span {
+width: 64px;
+height: 64px;
+margin: 0;
+padding: 0;
+}
+.canvas-toolbar label.button>span {
+display: block;
+}
+.canvas-toolbar label.button, .canvas-toolbar>.button-container {
+display: inline-block;
+}
+.canvas-toolbar>* {
+display: inline-block;
+}
+.button-container, label {
+width: fit-content;
+height: fit-content;
+padding: 0;
+margin: 0;
+position: relative;
+user-select: none;
+cursor: pointer;
+}
+label>input {
+position: fixed;
+top: -1000cm;
+width: 0.1px;
+height: 0.1px;
+}
+label>span {
+position: relative;
+}
+label>span::before, label>span::after {
+position: absolute;
+top:0;
+left:0;
+right:0;
+bottom:0;
+content:'';
+background-color="transparent";
+pointer-events: none;
+}
+label>input:active+span::before, label>input:checked+span::after, label>input:active+span::after {
+background-color: #0002;
+}
+label>input:hover:not(:active)+span::before {
+background-color: #0001;
+}
+label>input:focus:not(:active)+span::before {
+background-color: #08f4;
+}
+.select-container>.select {
+visibility: hidden;
+position: absolute;
+top: 100%;
+font-size:16px;
+}
+.select-container:focus-within>.select, .select-container>.select:active {
+visibility: visible;
+}
+.select>label {
+padding: 4px;
+margin: 0;
+display: block;
+width: 56px;
+}
+.select>label>span {
+display: block;
+width: 56px;
+}
+.select>label>span::after, .select>label>span::before {
+top:-4px;
+left:-4px;
+right:-4px;
+bottom:-4px;
+}
+.select>label:not(:last-child) {
+border-bottom: 1px solid lightgray;
+}
+body>div {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: 640px;
+height: 384px;
+display: flex;
+flex-direction: row;
+padding: 32px;
+}
+body>div>div {
+margin: 32px;
+}
+.canvas {
+width: 256px;
+height: 256px;
+position: relative;
+background-color: white;
+}
+.canvas>*{
+position: absolute;
+top: 0;
+left: 0;
+}
+.canvas>svg {
+pointer-events: none;
+}
+@media (max-height: 450px) and (max-width: 706px) {
+body>div {
+top: 0;
+transform: translateX(-50%);
+}
+}
+@media (max-width: 706px) {
+body>div {
+flex-direction: column;
+height: 768px;
+width: 320px;
+}
+}
+@media (max-height: 834px) and (max-width: 706px) and (min-width: 386px) {
+body>div {
+top: 0;
+transform: translateX(-50%);
+}
+}
+@media (max-width: 386px) {
+body>div {
+top: 0;
+left: 0;
+transform: none;
+}
+}
+body>div#kozep[id="kozep"] {
+position: absolute;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background-color: #0004;
+width: unset;
+height: unset;
+transform: unset;
+padding: unset;
+flex-direction: row;
+align-items: center;
+justify-content: center;
+visibility: hidden;
+z-index: 200;
+}
+#kozep>* {
+pointer-events: none;
+transform: unset !important;
+}
+#kozep>button {
+opacity: 0.8;
+}
+@media (max-height: 1024px) {
+#kozep>canvas {
+align-self: start;
+}
+}
+details {
+position: absolute;
+transform: translateY(-24px);
+z-index: 100;
+width: 186px;
+box-sizing: border-box;
+border: 1px solid lightgray;
+border-radius: 4px;
+background-color: white;
+padding: 3px 4px 2px;
+font-size: 12px;
+font-family: monospace;
+}
+details>summary {
+width: 100%;
+height: 17px;
+user-select: none;
+outline: none;
+}
+details[open]>summary {
+height: unset;
+}
+summary:focus {
+background-color: #0001;
+}
+details[open]>summary::after {
+content: "(x0, y0, maxIter) {";
+}
+details:not([open])>summary::after {
+content: "(\2026) {\2026}";
+}
+details[open] {
+box-shadow: #00000044 3px 3px 4px;
+width: max-content;
+}
+details>textarea {
+font: inherit;
+}
+details[open]:focus-within {
+z-index: 101;
+}
+.error:empty {
+display: none;
+}
+.error {
+box-sizing: border-box;
+padding: 4px;
+background-color: gold;
+}
+#sarokgomb, .sarokgomb {
+position: fixed;
+bottom: 0;
+right: 0;
+width: 75px;
+height: 75px;
+z-index: 100;
+border-top-left-radius: 10px;
+background-color: #ddd8;
+backdrop-filter: blur(1px);
+}
+#sarokgomb:hover {
+background-color: #ddd;
+}
+#sarokgomb:active {
+background-color: #ccc;
+}
+</style>
+</head>
+<body>
+<div style="border: 1px solid gray;">
+<div>
+<details>
+<summary>function mbMethod</summary>
+<div class="error" ></div>
+<textarea onchange="mbMUpdate(this.value, this.previousElementSibling);" style="display: block; width: 100%; min-width: 43ex; resize: both; box-sizing: border-box; border: none; padding: 0; margin: 0; height: 15.8em;">function palette(x){
+  if(Number.isFinite(x)&&x>=0){
+    return {
+      r:Math.sin(x/500)*128+128,
+      g:Math.sin(x/50)*128+128,
+      b:Math.cos(x/50)*128+128
+    };
+  }
+  else {
+    return {r:0,g:0,b:0};
+  }
+}
+
+var x=mbPx;
+var y=mbPy;
+/**
+* mbPx and mbPy are
+* global variables; their
+* value is the point's
+* coordinate where the
+* crosshair on the right is.
+*/
+for(var i=0; i<maxIter; i++){
+  var nx=x*x-y*y+x0;
+  y=(2*x*y)+y0;
+  x=nx;
+  if(x*x+y*y>4){
+    return palette(i);
+  }
+}
+return palette(-1);</textarea>
+}
+</details>
+<button type="button" style="width: 70px; height: 24px; box-sizing: border-box; position: absolute; transform: translate(186px, -24px);" onclick="mbKepExport(this);">Mentés</button>
+<div class="canvas"><canvas width="256" height="256" id="mandelbrot"></canvas><svg width="256" height="256" viewBox="0,0,256,256" style="mix-blend-mode: difference; background-color: black;"><path id="mbCrosshair" d="M 128.5 0 V 256 M 0 128.5 H 256" fill="none" stroke="white" stroke-width="1"/><rect id="mbZoomRect" width="128" height="128" fill="none" stroke="white" stroke-width="1" style="visibility: hidden;"/></svg></div>
+<div class="canvas-toolbar">
+  <label class="button">
+    <input type="radio" name="mandelbrot-tool" value="zoom-in" checked/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <defs>
+          <symbol id="nagyito">
+            <path d="M 8 56 L 40 24" fill="none" stroke="black" stroke-width="1.5"/>
+            <circle cx="44" cy="20" r="12" fill="white" stroke="black" stroke-width="1.5"/>
+          </symbol>
+          <symbol id="nyil">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="black"/>
+          </symbol>
+        </defs>
+        <use href="#nagyito"/>
+        <path d="M 36 20 h 16 M 44 12 v 16" fill="none" stroke="black" stroke-width="1.5"/>
+      </svg>
+    </span>
+  </label>
+  <label class="button">
+    <input type="radio" name="mandelbrot-tool" value="zoom-out"/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <use href="#nagyito"/>
+        <path d="M 36 20 h 16" fill="none" stroke="black" stroke-width="1.5"/>
+      </svg>
+    </span>
+  </label>
+  <label class="button">
+    <input type="radio" name="mandelbrot-tool" value="move"/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <path d="M 8 32 h 48 M 32 8 v 48" fill="none" stroke="black" stroke-width="1.5"/>
+        <use href="#nyil" x="48" y="27"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(90deg);"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(-90deg);"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(180deg);"/>
+      </svg>
+    </span>
+  </label>
+  <div class="select-container button-container">
+    <label class="button">
+      <input type="radio" name="mandelbrot-tool" value="set-point"/>
+      <span>
+        <img src="juliapici.png" style="width: 64px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"/>
+      </span>
+    </label>
+    <div class="select">
+      <label>
+        <input type="radio" name="julia-c-point-selector" value="pick"/>
+        <span>
+          <svg viewBox="0,0,10,10" style="width: 1em;display: inline-block;vertical-align: middle;">
+            <path d="M 0 5 h 10 M 5 0 v 10" fill="none" stroke="black"></path>
+          </svg>
+          pick
+        </span>
+      </label>
+      <label>
+        <input type="radio" name="julia-c-point-selector" value="set"
+            onchange="if(this.checked){
+                        var str=prompt('c pont: (a+bi szóköz nélkül)');
+                        this.parentElement.previousElementSibling.firstElementChild.click();
+                        if(str==null) return;
+                        var plus=str.indexOf('+');
+                        var i=str.indexOf('i');
+                        var x=plus!=-1?str.slice(0, plus):(i!=-1?'0':str);
+                        var y=i!=-1?(plus!=-1?str.slice(plus+1, i):str.slice(0, i)):'0';
+                        jPx=Number(x); jPy=Number(y);
+                        var pos=whereIsPx({x:jPx,y:jPy},{cx:mbCx,cy:mbCy,r:mbRadius},mbCnv);
+                        setMbCrosshair(pos.x,pos.y);
+                        showJ()
+                      }" />
+        <span>
+          <svg viewBox="0,0,10,10" style="width: 1em;display: inline-block;vertical-align: middle;">
+            <path d="M 2 0.5 h 1 a 1.5 1.5 0 0 1 1.5 1.5 v 6 a 1.5 1.5 0 0 1 -1.5 1.5 h -1 M 4.5 2 a 1.5 1.5 0 0 1 1.5 -1.5 h 1 M 4.5 8 a 1.5 1.5 0 0 0 1.5 1.5 h 1" fill="none" stroke="black"></path>
+          </svg>
+          set
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+</div>
+<div>
+<details>
+<summary>function jMethod</summary>
+<div class="error" ></div>
+<textarea onchange="jMUpdate(this.value, this. previousElementSibling);" style="display: block; width: 100%; min-width: 42ex; resize: both; box-sizing: border-box; border: none; padding: 0; margin: 0; height: 15.8em;">function palette(x){
+  if(Number.isFinite(x)&&x>=0){
+    return {
+      r:Math.sin(x/500)*128+128,
+      g:Math.sin(x/50)*128+128,
+      b:Math.cos(x/50)*128+128
+    };
+  }
+  else {
+    return {r:0,g:0,b:0};
+  }
+}
+
+var x=x0;
+var y=y0;
+/**
+* jPx and jPy are global
+* variables; their values
+* are the point's
+* coordinates where the
+* crosshair on the right is.
+*/
+for(var i=0; i<maxIter; i++){
+  var nx=x*x-y*y + jPx;
+  y=(2*x*y) + jPy;
+  x=nx;
+  if(x*x + y*y>4){
+    return palette(i);
+  }
+}
+return palette(-1);
+</textarea>
+}
+</details>
+<button type="button" style="width: 70px; height: 24px; box-sizing: border-box; position: absolute; transform: translate(186px, -24px);" onclick="jKepExport(this);">Mentés</button>
+<div class="canvas"><canvas width="256" height="256" id="julia"></canvas><svg width="256" height="256" viewBox="0,0,256,256" style="mix-blend-mode: difference; background-color: black;"><path id="jCrosshair" d="M 128.5 0 V 256 M 0 128.5 H 256" fill="none" stroke="white" stroke-width="1"/><rect id="jZoomRect" width="128" height="128" fill="none" stroke="white" stroke-width="1" style="visibility: hidden;"/></svg></div>
+<div class="canvas-toolbar">
+  <label class="button">
+    <input type="radio" name="julia-tool" value="zoom-in" checked/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <use href="#nagyito"/>
+        <path d="M 36 20 h 16 M 44 12 v 16" fill="none" stroke="black" stroke-width="1.5"/>
+      </svg>
+    </span>
+  </label>
+  <label class="button">
+    <input type="radio" name="julia-tool" value="zoom-out"/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <use href="#nagyito"/>
+        <path d="M 36 20 h 16" fill="none" stroke="black" stroke-width="1.5"/>
+      </svg>
+    </span>
+  </label>
+  <label class="button">
+    <input type="radio" name="julia-tool" value="move"/>
+    <span>
+      <svg viewBox="0,0,64,64">
+        <path d="M 8 32 h 48 M 32 8 v 48" fill="none" stroke="black" stroke-width="1.5"/>
+        <use href="#nyil" x="48" y="27"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(90deg);"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(-90deg);"/>
+        <use href="#nyil" x="48" y="27" style="transform-origin: center; transform: rotate(180deg);"/>
+      </svg>
+    </span>
+  </label>
+  <div class="select-container button-container">
+    <label class="button">
+      <input type="radio" name="julia-tool" value="set-point"/>
+      <span>
+        <img src="mandelbrotpici.png" style="width: 64px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"/>
+      </span>
+    </label>
+    <div class="select">
+      <label>
+        <input type="radio" name="mandelbrot-z-point-selector" value="pick"/>
+        <span>
+          <svg viewBox="0,0,10,10" style="width: 1em;display: inline-block;vertical-align: middle;">
+            <path d="M 0 5 h 10 M 5 0 v 10" fill="none" stroke="black"></path>
+          </svg>
+          pick
+        </span>
+      </label>
+      <label>
+        <input type="radio" name="mandelbrot-z-point-selector" value="set"
+            onchange="if(this.checked){
+                        var str=prompt('z pont: (a+bi szóköz nélkül)');
+                        this.parentElement.previousElementSibling.firstElementChild.click();
+                        if(str==null) return;
+                        var plus=str.indexOf('+');
+                        var i=str.indexOf('i');
+                        var x=plus!=-1?str.slice(0, plus):(i!=-1?'0':str);
+                        var y=i!=-1?(plus!=-1?str.slice(plus+1, i):str.slice(0, i)):'0';
+                        mbPx=Number(x); mbPy=Number(y);
+                        var pos=whereIsPx({x:mbPx,y:mbPy},{cx:jCx,cy:jCy,r:jRadius},mbCnv);
+                        setJCrosshair(pos.x,pos.y);
+                        showMb();
+                      }"/>
+        <span>
+          <svg viewBox="0,0,10,10" style="width: 1em;display: inline-block;vertical-align: middle;">
+            <path d="M 2 0.5 h 1 a 1.5 1.5 0 0 1 1.5 1.5 v 6 a 1.5 1.5 0 0 1 -1.5 1.5 h -1 M 4.5 2 a 1.5 1.5 0 0 1 1.5 -1.5 h 1 M 4.5 8 a 1.5 1.5 0 0 0 1.5 1.5 h 1" fill="none" stroke="black"></path>
+          </svg>
+          set
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+<div id="kozep"></div>
+<span id="drop">
+<label id="sarokgomb">
+<input type="file" style="width: 0.1px; height: 0.1px; position: absolute; top: -10px; left: -10px; opacity: 0.1;" onchange="pngDecodeSettings(this.files[0]);"/>
+<svg viewBox="0, 0, 100, 100">
+<path d="M 10 30 L 30 26.666666666 L 29 21 L 49 17.6666666666 L 50 23.333333333 L 70 20 L 80 70 L 20 80 z" fill="white" stroke="black" opacity="0.8"/>
+<path d="M 30 40 L 50 36.666666666 L 52 30 L 72 26.6666666666 L 70 33.333333333 L 90 30 L 80 70 L 20 80 z" fill="white" stroke="black" opacity="0.8"/>
+</svg>
+</label>
+</span>
+<script>
+const mbTools=document.getElementsByName("mandelbrot-tool");
+function getMbTool(){
+var tool=[...mbTools].find(x=>x.checked);
+return tool?tool.value:null;
+}
+const jTools=document.getElementsByName("julia-tool");
+function getJTool(){
+var tool=[...jTools].find(x=>x.checked);
+return tool?tool.value:null;
+}
+const mbCnv=document.getElementById("mandelbrot");
+const mbCtx=mbCnv.getContext("2d");
+const mbCrosshair=document.getElementById("mbCrosshair");
+const mbZoomRect=document.getElementById("mbZoomRect");
+const jCnv=document.getElementById("julia");
+const jCtx=jCnv.getContext("2d");
+const jCrosshair=document.getElementById("jCrosshair");
+const jZoomRect=document.getElementById("jZoomRect");
+var maxIter=10000;
+var mbRadius=2;
+var mbCx=0;
+var mbCy=0;
+var mbPx=0;
+var mbPy=0;
+var mbMethodNum=0;
+var mbP=Promise.resolve();
+const mbMethods=[
+function mandelbrot(x0,y0,maxIter){
+var x=mbPx;
+var y=mbPy;
+for(var i=0; i<maxIter; i++){
+var nx=x*x-y*y+x0;
+y=(2*x*y)+y0;
+x=nx;
+if(x*x+y*y>4){
+return palettes[0](i);
+}
+}
+return palettes[0](-1);
+}
+];
+var jRadius=2;
+var jCx=0;
+var jCy=0;
+var jPx=0;
+var jPy=0;
+var jMethodNum=0;
+var jP=Promise.resolve();
+const jMethods=[
+function mandelbrot(x0,y0,maxIter){
+var x=x0;
+var y=y0;
+for(var i=0; i<maxIter; i++){
+var nx=x*x-y*y+jPx;
+y=(2*x*y)+jPy;
+x=nx;
+if(x*x+y*y>4){
+return palettes[0](i);
+}
+}
+return palettes[0](-1);
+}
+];
+var hsl2rgb=function hsl2rgb(color){
+  if(!(("h" in color) && ("s" in color) && ("l" in color))) {
+    return {r: 0, g: 0, b: 0}
+  }
+  else {
+    var h=color.h/Math.PI*3; h%=6; h+=6; h%=6;
+    var s=color.s;
+    var l=color.l;
+    var rgb={r: 0, g: 0, b: 0};
+    switch(Math.floor(h)) {
+    case 0: rgb={r: 1, g: h%1, b: 0}
+      break;
+    case 1: rgb={r: (1-(h%1)), g: 1, b: 0}
+      break;
+    case 2: rgb={g: 1, b: h%1, r: 0}
+      break;
+    case 3: rgb={g: (1-(h%1)), b: 1, r: 0}
+      break;
+    case 4: rgb={b: 1, r: h%1, g: 0}
+      break;
+    case 5: rgb={b: (1-(h%1)), r: 1, g: 0}
+      break;
+    }
+    rgb={r: rgb.r*s+(1-s), g: rgb.g*s+(1-s), b: rgb.b*s+(1-s)};
+    rgb={r: rgb.r*l, g: rgb.g*l, b: rgb.b*l};
+    return rgb;
+  }
+}
+var paletteNum=1;
+const palettes=[
+function (x){
+if(Number.isFinite(x)&&x>=0){
+return {
+r:Math.sin(x/500)*128+128,
+g:Math.sin(x/50)*128+128,
+b:Math.cos(x/50)*128+128
+};
+}
+else {
+return {r:0,g:0,b:0};
+}
+},
+function (color){
+if(typeof color=="object") {
+if(!("r" in color)) color.r=0;
+if(!("g" in color)) color.g=0;
+if(!("b" in color)) color.b=0;
+return color;
+}
+else {
+return {r:0,g:0,b:0};
+}
+}
+];
+function draw(ctx, cx, cy, r, maxIter, method, palette){
+var run=true;
+var p=(async function(){
+await new Promise(r=>{setTimeout(r,100);});
+var cnv=ctx.canvas;
+var w=cnv.width;
+var h=cnv.height;
+var smin=Math.min(w,h);
+var zoom=r*2/smin;
+var imgdat=ctx.createImageData(w,h);
+var d=imgdat.data;
+var t=performance.now();
+for(var y=0; y<h; y++){
+for(var x=0; x<w; x++){
+if(!run){
+throw new Error("Drawing canceled.");
+}
+if(performance.now()-t>=100){
+ctx.putImageData(imgdat,0,0);
+await new Promise(r=>{setTimeout(r,0);});
+t=performance.now();
+}
+try {
+var color=palette(method(cx+zoom*(x-w/2),cy+zoom*(h/2-y),maxIter));
+} catch(e) {
+alert(e);
+throw e;
+}
+d[(x+y*w)*4+0]=color.r;
+d[(x+y*w)*4+1]=color.g;
+d[(x+y*w)*4+2]=color.b;
+d[(x+y*w)*4+3]=255;
+}
+}
+ctx.putImageData(imgdat,0,0);
+p.resolved=true;
+return imgdat;
+})();
+p.stop=function stop(){
+run=false;
+}
+p.resolved=false;
+return p;
+}
+if(!("OffscreenCanvas" in window)) window.OffscreenCanvas=function(W,H) {
+if(!new.target) return new OffscreenCanvas(W,H);
+var cnv=document.createElement("canvas");
+cnv.width=W;
+cnv.height=H;
+for(var k in cnv) Object.defineProperty(this,k,{get: function() {var x=cnv[k]; if(typeof x === "function") return x.bind(cnv); else return x;}, set: function(x) {return cnv[k]=x;}});
+};
+function show(ctx, cx, cy, r, maxIter, method, palette){
+var rP=Promise.resolve(); rP.stop=()=>{}; rP.resolved=true;
+var run=true;
+var p=(async function(){
+var cnv=ctx.canvas;
+var w=cnv.width;
+var h=cnv.height;
+for(var e=16; e>=1; e/=2){
+var W=Math.ceil(w/e);
+var H=Math.ceil(h/e);
+var ocnv=new OffscreenCanvas(W,H);
+var octx=ocnv.getContext("2d",{willReadFrequently: true});
+ctx.imageSmoothingEnabled=false;
+var i=setInterval(()=>{ctx.drawImage(ocnv,0,0,W*e,H*e);if(!run){clearInterval(i);}},100);
+rP=draw(octx, cx, cy, r, maxIter, method, palette);
+await rP;
+clearInterval(i);
+ctx.drawImage(ocnv,0,0,W*e,H*e);
+}
+})();
+p.stop=function stop(){
+run=false;
+if(!rP.resolved){
+rP.stop();
+}
+}
+return p;
+}
+mbP=show(mbCtx,mbCx,mbCy,2,500,mbMethods[mbMethodNum],palettes[paletteNum]);
+jP=show(jCtx,jCx,jCy,2,500,jMethods[jMethodNum],palettes[paletteNum]);
+function showMb() {
+mbP.stop();
+mbP=show(mbCtx,mbCx,mbCy,mbRadius,maxIter,mbMethods[mbMethodNum],palettes[paletteNum]);
+}
+function showJ() {
+jP.stop();
+jP=show(jCtx,jCx,jCy,jRadius,maxIter,jMethods[jMethodNum],palettes[paletteNum]);
+}
+</script>
+<script>
+function setMbCrosshair(x,y){
+x=Math.floor(Number(x));
+y=Math.floor(Number(y));
+mbCrosshair.style.d=`path("M 0 ${y+0.5} H 256 M ${x+0.5} 0 V 256")`;
+}
+function setJCrosshair(x,y){
+x=Math.floor(Number(x));
+y=Math.floor(Number(y));
+jCrosshair.style.d=`path("M 0 ${y+0.5} H 256 M ${x+0.5} 0 V 256")`;
+}
+function setMbZoomRect(x,y){
+x=Math.floor(Number(x));
+y=Math.floor(Number(y));
+w1_4=Math.floor(mbCnv.width/4);
+h1_4=Math.floor(mbCnv.height/4);
+mbZoomRect.style.x=x-w1_4+0.5;
+mbZoomRect.style.y=y-h1_4+0.5;
+mbZoomRect.style.w=Math.floor(mbCnv.width/2);
+mbZoomRect.style.h=Math.floor(mbCnv.height/2);
+}
+function setJZoomRect(x,y){
+x=Math.floor(Number(x));
+y=Math.floor(Number(y));
+w1_4=Math.floor(jCnv.width/4);
+h1_4=Math.floor(jCnv.height/4);
+jZoomRect.style.x=x-w1_4+0.5;
+jZoomRect.style.y=y-h1_4+0.5;
+jZoomRect.style.w=Math.floor(jCnv.width/2);
+jZoomRect.style.h=Math.floor(jCnv.height/2);
+}
+function whereIsPx(a,b,cnv){
+var x=a.x,y=a.y,cx=b.cx,cy=b.cy,r=b.r;
+var w=cnv.width;
+var h=cnv.height;
+var smin=Math.min(w,h);
+var zoom=r*2/smin;
+return {x:(x-cx)/zoom+w/2,y:h/2-(y-cy)/zoom}
+}
+function whereIsCplx(a,b,cnv){
+var x=a.x,y=a.y,cx=b.cx,cy=b.cy,r=b.r;
+var w=cnv.width;
+var h=cnv.height;
+var smin=Math.min(w,h);
+var zoom=r*2/smin;
+return {x:cx+zoom*(x-w/2),y:cy+zoom*(h/2-y)}
+}
+function handlers(a){
+//{ctx:mbCtx,ch:mbCrosshair,sch:setMbCrosshair,zr:mbZoomRect,szr:setMbZoomRect,cx:mbCx,cy:mbCy,r:mbRadius,px,py,m,mN}
+var mbCtx=a.ctx,mbCrosshair=a.ch,setMbCrosshair=a.sch,mbZoomRect=a.zr,setMbZoomRect=a.szr,getMbTool=a.t;
+var mbCnv=mbCtx.canvas;
+var h={};
+var mbImgDat=false, mbMoveX=mbMoveY=0;
+h.Move=function mbMove(e){
+if(e.isPrimary){
+switch(getMbTool()){
+case "zoom-in": {
+setMbZoomRect(e.offsetX,e.offsetY);
+break;
+}
+case "move": {
+if(isMbDn){
+var zoom=a.r()*2/Math.min(mbCnv.width,mbCnv.height);
+a.cx(a.cx()-e.movementX*zoom);
+a.cy(a.cy()+e.movementY*zoom);
+mbMoveX+=e.movementX;
+mbMoveY+=e.movementY;
+var pos=whereIsPx({x:a.px(),y:a.py()},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+setMbCrosshair(pos.x,pos.y);
+if(mbImgDat){
+mbCtx.clearRect(0,0,mbCnv.width,mbCnv.height);
+mbCtx.putImageData(mbImgDat,mbMoveX,mbMoveY);
+}
+}
+break;
+}
+case "set-point": {
+setMbCrosshair(e.offsetX,e.offsetY);
+if(isMbDn){
+var pos=whereIsCplx({x:e.offsetX,y:e.offsetY},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+a.px(pos.x);
+a.py(pos.y);
+a.sJ();
+}
+break;
+}
+}
+}
+}
+h.In=function mbIn(e){
+if(e.isPrimary){
+switch(getMbTool()){
+case "zoom-in": {
+mbCnv.style.cursor="zoom-in";
+mbZoomRect.style.visibility="visible";
+break;
+}
+case "zoom-out": {
+mbCnv.style.cursor="zoom-out";
+break;
+}
+case "move": {
+mbCnv.style.cursor="move";
+break;
+}
+case "set-point": {
+mbCnv.style.cursor="none";
+break;
+}
+}
+}
+}
+h.Out=function mbOut(e){
+if(e.isPrimary){
+switch(getMbTool()){
+case "zoom-in": {
+mbZoomRect.style.visibility="hidden";
+break;
+}
+case "set-point": {
+var pos=whereIsPx({x:a.px(),y:a.py()},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+setMbCrosshair(pos.x,pos.y);
+break;
+}
+}
+}
+}
+h.Dn=function mbDn(e){
+if(e.isPrimary){
+isMbDn=true;
+switch(getMbTool()){
+case "zoom-in": {
+setMbZoomRect(e.offsetX,e.offsetY);
+break;
+}
+case "move": {
+mbCnv.setPointerCapture(e.pointerId);
+mbP.stop();jP.stop();
+mbMoveX=mbMoveY=0;
+mbImgDat=mbCtx.getImageData(0,0,mbCnv.width,mbCnv.height);
+break;
+}
+}
+}
+}
+h.Up=function mbUp(e){
+if(e.isPrimary){
+isMbDn=false;
+switch(getMbTool()){
+case "zoom-in": {
+var pos=whereIsCplx({x:e.offsetX,y:e.offsetY},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+a.cx(pos.x);
+a.cy(pos.y);
+a.r(a.r()/2);
+a.sMb();
+pos=whereIsPx({x:a.px(),y:a.py()},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+setMbCrosshair(pos.x,pos.y);
+break;
+}
+case "zoom-out": {
+var pos=whereIsCplx({x:e.offsetX,y:e.offsetY},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+a.cx(pos.x);
+a.cy(pos.y);
+a.r(a.r()*2);
+a.sMb();
+pos=whereIsPx({x:a.px(),y:a.py()},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+setMbCrosshair(pos.x,pos.y);
+break;
+}
+case "move": {
+mbCnv.releasePointerCapture(e.pointerId);
+a.sMb();
+break;
+}
+case "set-point": {
+var pos=whereIsCplx({x:e.offsetX,y:e.offsetY},{cx:a.cx(),cy:a.cy(),r:a.r()},mbCnv);
+a.px(pos.x);
+a.py(pos.y);
+a.sJ();
+}
+}
+}
+}
+var isMbDn=false;
+return h;
+}
+var mb=handlers({
+ctx:mbCtx,
+ch:mbCrosshair,
+sch:setMbCrosshair,
+zr:mbZoomRect,
+szr:setMbZoomRect,
+cx:x=>{if(Number.isFinite(x)){mbCx=x;} return mbCx},
+cy:x=>{if(Number.isFinite(x)){mbCy=x;} return mbCy},
+r:x=>{if(Number.isFinite(x)){mbRadius=x;} return mbRadius},
+px:x=>{if(Number.isFinite(x)){jPx=x;} return jPx},
+py:x=>{if(Number.isFinite(x)){jPy=x;} return jPy},
+m:mbMethods,
+mN:x=>{if(Number.isFinite(x)){mbMethodNum=x;} return mbMethodNum},
+t:getMbTool,
+sJ: showJ,
+sMb: showMb
+});
+var j=handlers({
+ctx:jCtx,
+ch:jCrosshair,
+sch:setJCrosshair,
+zr:jZoomRect,
+szr:setJZoomRect,
+cx:x=>{if(Number.isFinite(x)){jCx=x;} return jCx},
+cy:x=>{if(Number.isFinite(x)){jCy=x;} return jCy},
+r:x=>{if(Number.isFinite(x)){jRadius=x;} return jRadius},
+px:x=>{if(Number.isFinite(x)){mbPx=x;} return mbPx},
+py:x=>{if(Number.isFinite(x)){mbPy=x;} return mbPy},
+m:jMethods,
+mN:x=>{if(Number.isFinite(x)){jMethodNum=x;} return jMethodNum},
+t:getJTool,
+sJ: showMb,
+sMb: showJ
+});
+mbCnv.addEventListener("pointerenter", mb.In);
+mbCnv.addEventListener("pointerleave", mb.Out);
+mbCnv.addEventListener("pointerdown", mb.Dn);
+mbCnv.addEventListener("pointermove", mb.Move);
+mbCnv.addEventListener("pointerup", mb.Up);
+mbCnv.addEventListener("touchmove", noscroll);
+
+jCnv.addEventListener("pointerenter", j.In);
+jCnv.addEventListener("pointerleave", j.Out);
+jCnv.addEventListener("pointerdown", j.Dn);
+jCnv.addEventListener("pointermove", j.Move);
+jCnv.addEventListener("pointerup", j.Up);
+jCnv.addEventListener("touchmove", noscroll);
+function noscroll(e){
+if(e.touches.length==1){
+e.preventDefault();
+}
+}
+async function mbKepExport(btn) {
+var wls=false;
+if(("wakeLock" in navigator) && ("request" in navigator.wakeLock)) {
+try {
+wls= await navigator.wakeLock.request("screen");
+}
+catch(e) {
+console.log("wakelock error");
+}
+}
+else {
+console.log("wakelock is not available");
+}
+var k=document.getElementById("kozep");
+k.style.visibility="visible";
+var cp=mbCnv.parentNode;
+var cs=mbCnv.nextSibling;
+var bp=btn.parentNode;
+var bs=btn.nextSibling;
+k.appendChild(btn);
+k.appendChild(mbCnv);
+mbP.stop();
+jP.stop();
+var rP;
+try {
+if(confirm("Nagy felbontású kép készítése?")) {
+mbCnv.width=mbCnv.height=1024;
+rP=draw(mbCtx,mbCx,mbCy,mbRadius,maxIter,mbMethods[mbMethodNum],palettes[paletteNum]);
+}
+else rP=Promise.resolve();
+btn.style.width="1024px";
+btn.innerText="mégse";
+btn.style.pointerEvents="all";
+var prev=btn.onclick;
+btn.onclick=()=>{
+rP.stop();
+}
+await rP;
+var blob=await new Promise(r=>mbCnv.toBlob(r,"image/png"));
+blob=new Blob([blob.slice(0, -12), pngEncodeSettingsAsText(), blob.slice(-12)], {type: blob.type});
+var a=document.createElement("a");
+a.download="fractal.png";
+a.href=URL.createObjectURL(blob);
+a.click();
+} finally {
+btn.onclick=prev;
+btn.style.width="70px";
+btn.innerText="Mentés";
+document.body.pointerEvents="";
+btn.style.pointerEvents="";
+mbCnv.width=mbCnv.height=256;
+k.style.visibility="";
+cp.insertBefore(mbCnv, cs);
+bp.insertBefore(btn, bs);
+if(wls) {
+wls.release();
+}
+showMb();
+showJ();
+}
+}
+async function jKepExport(btn) {
+var wls=false;
+if(("wakeLock" in navigator) && ("request" in navigator.wakeLock)) {
+try {
+wls= await navigator.wakeLock.request("screen");
+}
+catch(e) {
+console.log("wakelock error");
+}
+}
+else {
+console.log("wakelock is not available");
+}
+jP.stop();
+var k=document.getElementById("kozep");
+k.style.visibility="visible";
+var cp=jCnv.parentNode;
+var cs=jCnv.nextSibling;
+var bp=btn.parentNode;
+var bs=btn.nextSibling;
+k.appendChild(btn);
+k.appendChild(jCnv);
+var rP;
+if(confirm("Nagy felbontású kép készítése?")) {
+jCnv.width=jCnv.height=1024;
+rP=draw(jCtx,jCx,jCy,jRadius,maxIter,jMethods[jMethodNum],palettes[paletteNum]);
+}
+else rP=Promise.resolve();
+btn.style.width="1024px";
+btn.innerText="mégse";
+document.body.pointerEvents="none";
+btn.style.pointerEvents="all";
+var prev=btn.onclick;
+btn.onclick=()=>{
+rP.stop();
+btn.onclick=prev;
+btn.onclick=prev;
+btn.style.width="70px";
+btn.innerText="Mentés";
+document.body.pointerEvents="";
+btn.style.pointerEvents="";
+jCnv.width=jCnv.height=256;
+k.style.visibility="";
+cp.insertBefore(jCnv, cs);
+bp.insertBefore(btn, bs);
+if(wls) {
+wls.release();
+}
+showJ();
+}
+await rP;
+var blob=await new Promise(r=>jCnv.toBlob(r,"image/png"));
+blob=new Blob([blob.slice(0, -12), pngEncodeSettingsAsText(), blob.slice(-12)], {type: blob.type});
+var a=document.createElement("a");
+a.download="fractal.png";
+a.href=URL.createObjectURL(blob);
+a.click();
+btn.onclick=prev;
+btn.style.width="70px";
+btn.innerText="Mentés";
+document.body.pointerEvents="";
+btn.style.pointerEvents="";
+jCnv.width=jCnv.height=256;
+k.style.visibility="";
+cp.insertBefore(jCnv, cs);
+bp.insertBefore(btn, bs);
+if(wls) {
+wls.release();
+}
+showJ();
+}
+function mbMUpdate(string, errelm){
+try {
+mbMethods[1] = new Function("x0", "y0", "maxIter", string);
+mbMethodNum = 1; 
+errelm. innerText="";
+} catch(e) {
+errelm. innerText=e;
+} 
+localStorage.mbFunc = string;
+showMb();
+}
+function jMUpdate(string, errelm){
+try {
+jMethods[1] = new Function("x0", "y0", "maxIter", string);
+jMethodNum = 1; 
+errelm. innerText="" ;
+} catch(e) {
+errelm. innerText=e;
+} 
+localStorage.jFunc = string;
+showJ();
+}
+var txtas=document.querySelectorAll("textarea");
+if(localStorage.mbFunc){
+mbMUpdate(txtas[0].value=localStorage.mbFunc, txtas[0].previousElementSibling);
+}
+if(localStorage.jFunc){
+jMUpdate(txtas[1].value=localStorage.jFunc, txtas[1].previousElementSibling);
+}
+function Complex(real, imag){
+if(typeof real=="object"){
+if(real instanceof Complex){
+this.real=real.real;
+this.imag=real.imag;
+}
+}
+else {
+this.real=Number(real);
+if(imag) {
+this.imag=Number(imag);
+}
+else {
+this.imag=0;
+}
+}
+}
+Complex.prototype.meg = Complex.prototype.plus = Complex.prototype.plusz = function(z) {
+var Z=new Complex(...arguments);
+return new Complex(this.real + Z.real, this.imag + Z.imag);
+}
+Complex.prototype.ból = Complex.prototype.ből = Complex.prototype.bol = Complex.prototype.minusz = Complex.prototype.minus = function(z) {
+var Z=new Complex(...arguments);
+return new Complex(this.real - Z.real, this.imag - Z.imag);
+}
+Complex.prototype.szer = Complex.prototype.ször = Complex.prototype.szor = function(z) {
+var Z=new Complex(...arguments);
+return new Complex(this.real * Z.real - this.imag * Z.imag, this.real * Z.imag + this.imag * Z.real);
+}
+Complex.prototype.ban = Complex.prototype.ben = Complex.prototype.per = function(z) {
+var Z=new Complex(...arguments);
+var x=this.szer(new Complex(Z.real, -Z.imag));
+var r=Z.real*Z.real + Z.imag * Z.imag;
+return new Complex(x.real / r, x.imag / r);
+}
+function exp(z) {
+var Z=new Complex(...arguments);
+var e=Math.exp(Z.real);
+return new Complex(Math.cos(Z.imag) * e, Math.sin(Z.imag) * e);
+}
+function sin(z) {
+var Z=new Complex(z);
+return exp(Z.szer(0,1)).ből(exp(Z.szer(0,-1))).ben(0,2);
+}
+function cos(z) {
+var Z=new Complex(z);
+return exp(Z.szer(0,1)).meg(exp(Z.szer(0,-1))).ben(2,0);
+}
+function abs(z) {
+var Z=new Complex(z);
+return Math.sqrt(Z.real*Z.real+Z.imag*Z.imag);
+}
+function keplet(gyokok) {
+  function szoroz(k1, k2) {
+    var res=[];
+    k1.forEach(p1=>{
+      res=res.concat(k2.map(p2=>{return {s: p1.s.szer(p2.s), h: p1.h+p2.h}}));
+    });
+    return res;
+  }
+  function ov(k) {
+    var s;
+    var n=0;
+    var res=[];
+    for(var h=0; n<k.length; h++) {
+      var r=k.filter(p=>p.h==h);
+      s=new Complex(0,0);
+      r.forEach(p=>{
+        n++;
+        s=s.meg(p.s);
+      });
+      if(s.real!=0 || s.imag!=0){
+        res.push({s: s, h: h});
+      }
+    }
+    return res;
+  }
+  var pontok=gyokok.map(p=>new Complex(p));
+  var szorz=pontok.map(x=>[{s: new Complex(1, 0), h: 1}, {s: new Complex(-x.real, -x.imag), h: 0}]);
+  while(szorz.length > 1) {
+    szorz.push(ov(szoroz(szorz.pop(), szorz.pop())));
+  }
+  return szorz[0];
+}
+function deriv(k) {
+  var d=k.map(p=> {
+    return {
+      s: p.s.szer(p.h, 0),
+      h: p.h - 1
+    };
+  });
+  return d.filter(p=>p.s.real != 0 || p.s.imag != 0);
+}
+function integ(k) {
+  var i=k.map(p=> {
+    return {
+      s: p.s.szer(1/(p.h+1), 0),
+      h: p.h + 1
+    };
+  });
+  return i.filter(p=>p.s.real != 0 || p.s.imag != 0);
+}
+function fxKeplet(k) {
+  var str = "p=new Complex(...arguments);var ph=[];ph[0]=new Complex(1, 0);";
+  var legNH = Math.max.apply(null, k.map(p=>p.h));
+  for(var i = 1; i <= legNH; i++) {
+    str+="ph["+i+"]=ph["+(i-1)+"].szer(p);";
+  }
+  str+="var res=new Complex(0, 0);";
+  for(var i = 0; i < k.length; i++) {
+    str+="res=res.meg(ph["+k[i].h+"].szer(new Complex("+k[i].s.real.toString()+","+k[i].s.imag.toString()+")));";
+  }
+  str+="return res;";
+  return new Function("p", str);
+}
+</script>
+
+<script>
+//crc calculating codes' source: https://www.w3.org/TR/PNG/#D-CRCAppendix
+function makeCrc32Table() {
+  var table = new Int32Array(256);
+  for(var n = 0; n < 256; n++) {
+    var c = n;
+    for(var k = 0; k < 8; k++) {
+      if(c & 1) {
+        c = 0xedb88320 ^ (c >>> 1);
+      }
+      else {
+        c = c >>> 1;
+      }
+    }
+    table[n] = c;
+  }
+  return table;
+}
+var crc32Table = makeCrc32Table();
+
+function updateCrc(crc, buf) {
+  if(!(buf instanceof Uint8Array)) {
+    if(buf instanceof ArrayBuffer) {
+      buf = new Uint8Array(buf);
+    }
+    else if(buf instanceof Object.getPrototypeOf(Uint8Array.prototype).constructor) {
+      buf = new Uint8Array(buf.buffer);
+    }
+    else {
+      throw new Error("buf isn't an ArrayBuffer, nor a TypedArray");
+    }
+  }
+  var c = crc;
+  for(var n = 0; n < buf.length; n++) {
+    c = crc32Table[(c ^ buf[n]) & 0xff] ^ (c >>> 8);
+  }
+  return c;
+}
+
+function getCrc(buf) {
+  return updateCrc(0xffffffff, buf);
+}
+
+function pngEncodeSettingsAsText() {
+  var arr=[];
+  //chunk for mbMethod
+  var cData=[];
+  cData.push(...([..."mbMethod (javascript code)"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  for(var i=0; i<txtas[0].value.length; i++) {
+    var num=txtas[0].value.charCodeAt(i);
+    var foly=true;
+    while(foly) {
+      foly=num > 0x7f;
+      cData.push((num & 0x7f) | (foly ? 0x80 : 0x00));
+      num >>>= 7;
+    }
+  }
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jMethod
+  var cData=[];
+  cData.push(...([..."jMethod (javascript code)"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  for(var i=0; i<txtas[1].value.length; i++) {
+    var num=txtas[1].value.charCodeAt(i);
+    var foly=true;
+    while(foly) {
+      foly=num > 0x7f;
+      cData.push((num & 0x7f) | (foly ? 0x80 : 0x00));
+      num >>>= 7;
+    }
+  }
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for mbCx
+  var cData=[];
+  cData.push(...([..."mbCx"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...mbCx.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for mbCy
+  var cData=[];
+  cData.push(...([..."mbCy"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...mbCy.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for mbRadius
+  var cData=[];
+  cData.push(...([..."mbRadius"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...mbRadius.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for mbPx
+  var cData=[];
+  cData.push(...([..."mbPx"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...mbPx.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for mbPy
+  var cData=[];
+  cData.push(...([..."mbPy"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...mbPy.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jCx
+  var cData=[];
+  cData.push(...([..."jCx"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...jCx.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jCy
+  var cData=[];
+  cData.push(...([..."jCy"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...jCy.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jRadius
+  var cData=[];
+  cData.push(...([..."jRadius"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...jRadius.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jPx
+  var cData=[];
+  cData.push(...([..."jPx"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...jPx.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+
+  //chunk for jPy
+  var cData=[];
+  cData.push(...([..."jPy"].map(char=>char.charCodeAt(0))));
+  cData.push(0);
+  cData.push(...([...jPy.toString()].map(char=>char.charCodeAt(0))));
+  var len=cData.length;
+  arr.push((len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff);
+  arr.push(116, 69, 88, 116);
+  arr.push(...cData);
+  var crc = ~getCrc(new Uint8Array([116, 69, 88, 116].concat(cData)));
+  arr.push((crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff);
+ debugger;
+  var u8a=new Uint8Array(arr);
+  return u8a.buffer;
+}
+async function pngDecodeSettings(file) {
+try {
+  var ab = await file.arrayBuffer();
+} catch(e) {
+alert(e);
+throw e;
+}
+  var u8a = new Uint8Array(ab);
+  var pos = 8;
+  var len = 0;
+  var ended = false;
+  var txtChunks = [];
+  while(!ended) {
+    len = (u8a[pos] << 24) | (u8a[pos + 1] << 16) | (u8a[pos + 2] << 8) | u8a[pos + 3];
+    if(u8a[pos+4] == 116 && u8a[pos+5] == 69 && u8a[pos+6] == 88 && u8a[pos+7] == 116) {
+      txtChunks.push(u8a.slice(pos+8, pos+8+len));
+    }
+    if(u8a[pos+4] == 73 && u8a[pos+5] == 69 && u8a[pos+6] == 78 && u8a[pos+7] == 68) {
+      ended = true;
+    }
+    pos+=12+len;
+  }
+  var entries = txtChunks.map(u8a => {
+    var a = [...u8a];
+    var sep = a.indexOf(0);
+    var key = String.fromCharCode(...a.slice(0, sep));
+    var value = a.slice(sep+1);
+    return [key, value];
+  });
+  var obj=Object.fromEntries(entries);
+  function getCode(val) {
+    var str="";
+    var num=0;
+    var shift=0;
+    for(var i=0; i<val.length; i++) {
+      num |= (val[i] & 0x7f) << (7 * shift);
+      if((val[i] & 0x80) == 0) {
+        str += String.fromCharCode(num);
+        num=0; shift=0;
+      }
+      else {
+        shift++;
+      }
+    }
+    return str;
+  }
+  if("mbMethod (javascript code)" in obj)
+    mbMUpdate(txtas[0].value = getCode(obj["mbMethod (javascript code)"]), txtas[0].previousElementSibling);
+  if("jMethod (javascript code)" in obj)
+    jMUpdate(txtas[1].value = getCode(obj["jMethod (javascript code)"]), txtas[1].previousElementSibling);
+
+  if("mbCx" in obj) mbCx = Number.parseFloat(String.fromCharCode(...obj.mbCx));
+  if("mbCy" in obj) mbCy = Number.parseFloat(String.fromCharCode(...obj.mbCy));
+  if("mbPx" in obj) mbPx = Number.parseFloat(String.fromCharCode(...obj.mbPx));
+  if("mbPy" in obj) mbPy = Number.parseFloat(String.fromCharCode(...obj.mbPy));
+  if("mbRadius" in obj) mbRadius = Number.parseFloat(String.fromCharCode(...obj.mbRadius));
+
+  if("jCx" in obj) jCx = Number.parseFloat(String.fromCharCode(...obj.jCx));
+  if("jCy" in obj) jCy = Number.parseFloat(String.fromCharCode(...obj.jCy));
+  if("jPx" in obj) jPx = Number.parseFloat(String.fromCharCode(...obj.jPx));
+  if("jPy" in obj) jPy = Number.parseFloat(String.fromCharCode(...obj.jPy));
+  if("jRadius" in obj) jRadius = Number.parseFloat(String.fromCharCode(...obj.jRadius));
+
+  var pos=whereIsPx({x:mbPx,y:mbPy},{cx:jCx,cy:jCy,r:jRadius},mbCnv);
+  setJCrosshair(pos.x,pos.y);
+  var pos=whereIsPx({x:jPx,y:jPy},{cx:mbCx,cy:mbCy,r:mbRadius},mbCnv);
+  setMbCrosshair(pos.x,pos.y);
+
+  showMb();
+  showJ();
+}
+</script>
+
+<script>
+function handleDragover(e) {
+e.currentTarget.firstElementChild.style.backgroundColor = "dodgerblue";
+if(e.dataTransfer) {
+e.preventDefault();
+if(e.dataTransfer.effectAllowed.indexOf("copy") != -1 || e.dataTransfer.effectAllowed == "all") {
+e.dataTransfer.dropEffect="copy";
+}
+}
+}
+function handleDrop(e) {
+e.currentTarget.firstElementChild.style.backgroundColor = "";
+if(e.dataTransfer) {
+var index = [...e.dataTransfer.files].findIndex(f=>f.type=="image/png");
+if(index == -1) {
+alert("Nincs PNG kép az ide ejtett fájlok között!");
+return;
+}
+e.preventDefault();
+pngDecodeSettings(e.dataTransfer.files[index]);
+}
+}
+function handleDragenter(e) {
+if(e.dataTransfer) {
+e.preventDefault();
+e.currentTarget.firstElementChild.style.backgroundColor = "dodgerblue";
+if(e.dataTransfer.effectAllowed.indexOf("copy") != -1 || e.dataTransfer.effectAllowed == "all") {
+e.dataTransfer.dropEffect="copy";
+}
+}
+}
+function handleDragleave(e) {
+e.currentTarget.firstElementChild.style.backgroundColor = "";
+}
+var drop=document.getElementById("drop");
+drop.ondragenter=handleDragenter;
+drop.ondragleave=handleDragleave;
+drop.ondragover=handleDragover;
+drop.ondrop=handleDrop;
+</script>
+</body>
+</html>
+<!--
+//törött vonalon mozgó c pontú Julia halmaz videót készít
+(async function(){
+jCnv.width=jCnv.height=256;
+var stream=jCnv.captureStream(0);
+var rec=new MediaRecorder(stream,{mimeType:"video/x-matroska"});
+rec.start();rec.pause();
+for(var v=0; v<a.length-2; v+=2){
+for(var i=0; i<=1; i+=0.01){
+jPx=a[v+2]*i+a[v]*(1-i);
+jPy=a[v+3]*i+a[v+1]*(1-i);
+await draw(jCtx,0,0,jRadius,maxIter,jMethods[jMethodNum],palettes[paletteNum]);
+stream.getVideoTracks()[0].requestFrame();
+rec.resume();
+await new Promise(r=>setTimeout(r,50));
+rec.pause();
+}
+}
+rec.stop();
+rec.ondataavailable=e=>{var bl=e.data;
+var b=document.createElement("a");b.href=URL.createObjectURL(bl);b.download="video.mkv";b.click();}
+jCnv.width=jCnv.height=256;
+})();
+-->
