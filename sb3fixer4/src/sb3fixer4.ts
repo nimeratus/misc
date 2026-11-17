@@ -23,7 +23,7 @@ var options:ProjectFixOptions = {
   deleteSuspiciousOpcodes: true,
   deleteUnknownOpcodes: false, // can break projects made using mods or future versions AND can break hacked blocks
   deleteInvisibleBlocks: false, // can break hacked blocks
-  deleteGhostBlocks: true,
+  deleteGhostBlocks: true, // deletes those invisible blocks that I think can't run
   /** 0=don't, 1=floating reporters, 2=anything not connected to hat blocks. It won't delete the blocks if there are comments attached to them */
   deleteDisconnectedBlocks: 1,
   unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks
@@ -1261,7 +1261,7 @@ function deleteProblematicBlocks(spagetti:BlockSpagetti, sprite:Sprite, options:
       if(options.deleteDisconnectedBlocks && block.opcode && typeof OpcodeType==="object" && OpcodeType[block.opcode]<options.deleteDisconnectedBlocks && block.opcode !== "procedures_definition" && !(isID(id) && commentedBlockIds.has(id)) && typeof block.comment!=="string") return false;
       // procedures_definition can also run if not marked as topLevel, so it doesn't count as a ghost block
       if(options.deleteGhostBlocks && !block.topLevel && (block.opcode !== "procedures_definition" || options.deleteInvisibleBlocks)) return false;
-      if(options.deleteInvisibleBlocks && block.shadow) return false;
+      if(block.shadow && (options.deleteInvisibleBlocks || options.deleteGhostBlocks && block.opcode && typeof OpcodeType==="object" && OpcodeType[block.opcode]<2 && block.opcode !== "procedures_defintion")) return false;
     }
     return true;
   }
