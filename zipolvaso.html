@@ -20,9 +20,10 @@ var o=document.getElementById("o");
 var o2=document.getElementById("o2");
 var b=document.getElementById("b");
 var o3=document.getElementById("o3");
-if(!Zip) alert("gzip.js hiányzik");
+if(!window.Zip) alert("gzip.js hiányzik");
 var zip;
 async function megnyit(f) {
+  try{
 if(!f) return;
 o.innerHTML = o3.innerHTML = "";
 o2.innerText="..."; b.disabled=true;
@@ -35,6 +36,7 @@ var ul=document.createElement("ul");
 o.appendChild(ul);
 var paths = zip.listDirectoryContent("");
 addPaths(ul, "", paths);
+  }catch(error){alert(error);}
 }
 o.addEventListener("click", onClick);
 var lastPath = "";
@@ -89,6 +91,7 @@ return x.toFixed(1)+"\xA0"+e[i];
 }
 b.addEventListener("click",onClick2);
 async function onClick2(evt) {
+  try{
 var div=document.createElement("div");
 var a=document.createElement("a");
 o3.appendChild(div);
@@ -97,7 +100,9 @@ a.innerText="...";
 a.download=lastPath;
 a.href=URL.createObjectURL(new Blob([await zip.getFileContentAsync(lastPath)]));
 a.innerText=a.download+" letöltése";
+  }catch(error){alert(error);}
 }
 </script>
 </body>
+
 </html>
