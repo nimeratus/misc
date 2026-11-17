@@ -422,7 +422,7 @@ class VariableManager {
     findLocalByName(v) {
         if (!v)
             return;
-        this.nameMaps[v.list].get(v.name);
+        return this.nameMaps[v.list].get(v.name);
     }
     findByName(v) {
         if (!v)
