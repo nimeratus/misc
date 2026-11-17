@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Tunnel Deformer</title>
+<style>
+input[type="range"] {
+vertical-align: middle;
+}
+</style>
+</head>
+<body>
+<p>This thing can be used to move the perspective point to the center on an image of a tunnel.</p>
+<form id="form">
+<input type="file" accept="image/*" name="fi"/>
+<button type="button" onclick="createImageBitmap(fe.fi.files[0]).then(setImage).then(draw)">open</button>
+<div>Tools:</div>
+<div><label><input type="radio" name="tool" value="u_center"/>Perspective Center</label></div>
+<div><label><input type="radio" name="tool" value="u_circle"/>Circle Center</label></div>
+<div><label><input type="radio" name="tool" value="u_radius"/>Circle Radius</label></div>
+<div>Zoom<input type="range" name="zoom" min="0" max="1" value="1" step="0.01" oninput="uniforms.u_zoom=+this.value;draw();"/></div>
+</form>
+<div>
+<canvas id="cnv1"></canvas>
+<canvas id="cnv2"></canvas>
+</div>
+<button type="button" onclick="save();">Save</button>
+<script type="x-shader/x-vertex" id="sv">
+attribute vec4 a_pos;
+attribute vec2 a_tex;
+varying vec2 v_tex;
+void main() {
+  v_tex = a_tex;
+  gl_Position = a_pos;
+}
+</script>
+<script type="x-shader/x-fragment" id="sf">
+precision mediump float;
+varying vec2 v_tex;
+uniform sampler2D u_sampler;
+uniform vec2 u_size;
+uniform vec2 u_center;
+uniform vec2 u_circle;
+uniform float u_radius;
+uniform float u_zoom;
+void main() {
+  vec2 circ1 = (v_tex-0.5) * u_size * u_zoom;// - u_circle;
+  vec2 circ2 = circ1 + (u_center - u_circle) * (1.0 - length(circ1 / u_radius));
+  vec2 tex = (circ2 + u_circle) / u_size;
+  gl_FragColor = texture2D(u_sampler, tex);
+}
+</script>
+<script>
+var ctx=document.getElementById("cnv1").getContext("2d");
+var gl=document.getElementById("cnv2").getContext("webgl");
+var fe=document.getElementById("form").elements;
+var prog=null;
+var attribs={a_pos: null, a_tex: null};
+var buffers={a_pos: null, a_tex: null};
+var uniformLoc={u_sampler: null, u_size: null, u_center: null, u_circle: null, u_radius: null};
+var uniforms = {u_sampler: 0, u_size: [1,1], u_center: [0,0], u_circle: [0,0], u_radius: 1, u_zoom:1};
+var uniformToSet = 0;
+var texture=null;
+var img=null;
+function glInit() {
+  gl.deleteProgram(prog);
+  var sv=gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(sv, document.getElementById("sv").textContent);
+  gl.compileShader(sv);
+  var sf=gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(sf, document.getElementById("sf").textContent);
+  gl.compileShader(sf);
+  prog=gl.createProgram();
+  gl.attachShader(prog,sv);
+  gl.attachShader(prog,sf);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) {
+    var error=`Vertex:
+${gl.getShaderInfoLog(sv)}
+Fragment:
+${gl.getShaderInfoLog(sf)}
+Link:
+${gl.getProgramInfoLog(prog)}`;
+    alert(error);
+    console.warn(error);
+  }
+  gl.deleteShader(sv);
+  gl.deleteShader(sf);
+  gl.useProgram(prog);
+  attribs.a_pos = gl.getAttribLocation(prog,"a_pos");
+  buffers.a_pos=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.a_pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(attribs.a_pos);
+  gl.vertexAttribPointer(attribs.a_pos, 2/*size*/, gl.FLOAT, false/*normalize*/, 0/*stride*/, 0/*offset*/);
+  attribs.a_tex = gl.getAttribLocation(prog, "a_tex");
+  buffers.a_tex=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.a_tex);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,1,0,0,1,1,1,0]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(attribs.a_tex);
+  gl.vertexAttribPointer(attribs.a_tex, 2/*size*/, gl.FLOAT, false/*normalize*/, 0/*stride*/, 0/*offset*/);
+  gl.deleteTexture(texture);texture=null;
+  if(img) setImageTexture();
+  uniformLoc.u_sampler=gl.getUniformLocation(prog,"u_sampler");
+  uniformLoc.u_size=gl.getUniformLocation(prog,"u_size");
+  uniformLoc.u_center=gl.getUniformLocation(prog,"u_center");
+  uniformLoc.u_circle=gl.getUniformLocation(prog,"u_circle");
+  uniformLoc.u_radius=gl.getUniformLocation(prog,"u_radius");
+  uniformLoc.u_zoom=gl.getUniformLocation(prog,"u_zoom");
+}
+function setImage(_img) {
+if(img && img !== _img) img.close();
+img = _img;
+setImageTexture();
+var scale=Math.min(1,480/img.width, 360/img.height);
+ctx.canvas.style.width=gl.canvas.style.width=img.width*scale+"px";
+ctx.canvas.style.height=gl.canvas.style.height=img.height*scale+"px";
+uniforms.u_size=[img.width, img.height];
+uniforms.u_center=[img.width/2, img.height/2];
+uniforms.u_circle=[img.width/2, img.height/2];
+uniforms.u_radius=Math.max(img.width/3, img.height/3);
+}
+function setImageTexture() {
+  gl.deleteTexture(texture);texture=null;
+  if(img) {
+    texture=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Set the parameters so we can render any size image.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    // Upload the image into the texture.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  }
+}
+function glDraw() {
+  gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
+  gl.clearColor(0,0,1,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform2f(uniformLoc.u_size, ...uniforms.u_size);
+  gl.uniform2f(uniformLoc.u_size, ...uniforms.u_size);
+  gl.uniform2f(uniformLoc.u_center, ...uniforms.u_center);
+  gl.uniform2f(uniformLoc.u_circle, ...uniforms.u_circle);
+  gl.uniform1f(uniformLoc.u_radius, uniforms.u_radius);
+  gl.uniform1f(uniformLoc.u_zoom, uniforms.u_zoom);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function ctxDraw() {
+  var scale=ctx.canvas.width/img.width;
+  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  ctx.drawImage(img,0,0,ctx.canvas.width,ctx.canvas.height);
+  ctx.beginPath();
+  ctx.arc(uniforms.u_center[0]*scale, uniforms.u_center[1]*scale, 3, 0, Math.PI*2);
+  ctx.fillStyle="#ff4400";
+  ctx.fill();
+  ctx.strokeStyle="#cc0000";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(uniforms.u_circle[0]*scale, uniforms.u_circle[1]*scale, 3, 0, Math.PI*2);
+  ctx.fillStyle="#ccff00";
+  ctx.fill();
+  ctx.strokeStyle="#00cc00";
+  ctx.arc(uniforms.u_circle[0]*scale, uniforms.u_circle[1]*scale, uniforms.u_radius*scale, 0, Math.PI*2);
+  ctx.stroke();
+}
+function handlePointermove(evt) {
+  if(!img) return;
+  var x=evt.offsetX*img.width/ctx.canvas.clientWidth;
+  var y=evt.offsetY*img.height/ctx.canvas.clientHeight;
+  if(uniformToSet == "u_radius") uniforms.u_radius = Math.hypot(x-uniforms.u_circle[0], y-uniforms.u_circle[1]);
+  else uniforms[uniformToSet]=[x,y];
+  draw();
+}
+function handlePointerdown(evt) {
+  uniformToSet=fe.tool.value;
+}
+function handlePointerup(evt) {
+  uniformToSet=0;  
+}
+ctx.canvas.addEventListener("pointermove",handlePointermove);
+ctx.canvas.addEventListener("pointerdown",handlePointerdown);
+ctx.canvas.addEventListener("pointerup",handlePointerup);
+function draw() {
+ctx.canvas.width=ctx.canvas.clientWidth;
+ctx.canvas.height=ctx.canvas.clientHeight;
+gl.canvas.width=gl.canvas.clientWidth;
+gl.canvas.height=gl.canvas.clientHeight;
+ctxDraw();
+glDraw();
+gl.enable(gl.SCISSOR_TEST);
+gl.scissor(gl.drawingBufferWidth/2,0,1,gl.drawingBufferHeight);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.scissor(0,gl.drawingBufferHeight/2,gl.drawingBufferWidth,1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.disable(gl.SCISSOR_TEST);
+}
+glInit();
+function save() {
+gl.canvas.width=img.width;
+gl.canvas.height=img.height;
+glDraw();
+gl.canvas.toBlob(downloadBlob,"image/png");
+}
+function downloadBlob(blob) {
+var a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="tunnel";
+a.target="_blank";
+a.click();
+}
+</script>
+</body>
+</html>
