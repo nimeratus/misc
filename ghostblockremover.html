@@ -4,19 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>sb3 bug fixer</title>
-<script>onerror=alert;</script>
+    <script>onerror=alert;</script>
     <script src="gzip.js"></script>
-<style>
-.explanation{
-margin-left: 2em;
-margin-bottom: 1em;
-}
-.warning {
-padding: 0 0.2em;
-background-color: #ffcc0088;
-border-radius: 0.2em;
-}
-</style>
+    <style>
+        .explanation{
+            margin-left: 2em;
+            margin-bottom: 1em;
+        }
+        .warning {
+            padding: 0 0.2em;
+            background-color: #ffcc0088;
+            border-radius: 0.2em;
+        }
+    </style>
 </head>
 <body>
     <noscript>
@@ -122,11 +122,11 @@ border-radius: 0.2em;
                 }
             }
         }
-function removeGhostBlocksFromSprites(sprites) {
-var totalBlocksInProject = 0;
+        function removeGhostBlocksFromSprites(sprites) {
+            var totalBlocksInProject = 0;
             var totalBlocksRemoved = 0;
             var blocksRemovedInSprite = 0;
-var referenced = new Set();
+            var referenced = new Set();
             for(let sprite of sprites) {
                 if(!sprite || !sprite.blocks) continue;
                 console.log(sprite.name);
@@ -152,89 +152,92 @@ var referenced = new Set();
             }
             log("----");
             log(`${totalBlocksRemoved} blocks (${(100*totalBlocksRemoved / totalBlocksInProject).toPrecision(2)}%) removed from the project`);
-}
+        }
 
-function removeGhostVariablesFromSprites(sprites) {
-var totalVarsInProject=0;
-var totalVarsRemoved=0;
-for(let sprite of sprites) {
-if(!sprite) continue;
-let removedVars=0, removedLists=0;
-let vars={__proto__:null};
-if(sprite.variables) {
-for(let id in sprite.variables) {
-totalVarsInProject+=1;
-let [name, value]=sprite.variables[id];
-if(name in vars) {
-delete sprite.variables[id];
-removedVars+=1;
-totalVarsRemoved+=1;
-}
-else {
-vars[name]=id;
-}
-}
-}
-let lists={__proto__:null};
-if(sprite.lists) {
-for(let id in sprite.lists) {
-totalVarsInProject+=1;
-let [name, value]=sprite.lists[id];
-if(name in lists) {
-delete sprite.lists[id];
-removedLists+=1;
-totalVarsRemoved+=1;
-}
-else {
-lists[name]=id;
-}
-}
-}
-if(removedVars>0) log(`${removedVars} variables removed from ${sprite.name}`);
-if(removedLists>0) log(`${removedLists} lists removed from ${sprite.name}`);
-fixVariableBlocksInSprites(sprite.isStage?sprites:[sprite], vars, lists);
-}
-log("----");
-log(`${totalVarsRemoved} variables and lists (${(totalVarsRemoved/totalVarsInProject).toPrecision(2)}%) removed from project`);
-}
-function* getBlockObjects(blocks) {
-for(let block of Object.values(blocks)) {
-if(!block) continue;
-yield block;
-if(block.inputs){
-for(let input of Object.values(block.inputs)) {
-for(let i=1; i<input.length; i++){
-if(Array.isArray(input[i])) yield input[i];
-}
-}
-}
-}
-}
-function fixVariableBlocksInSprites(sprites, vars, lists){
-for(let sprite of sprites) {
-if(!sprite || !sprite.blocks) continue;
-for(let block of getBlockObjects(sprite.blocks)) {
-if(block[0]==12) {
-if(block[1] in vars){
-block[2]=vars[block[1]];
-}
-}
-if(block[0]==13) {
-if(block[1] in lists){
-block[2]=lists[block[1]];
-}
-}
-if(block.fields) {
-if(block.fields.VARIABLE && (block.fields.VARIABLE[0] in vars)) {
-block.fields.VARIABLE[1] = vars[block.fields.VARIABLE[0]];
-}
-if(block.fields.LIST && (block.fields.LIST[0] in lists)) {
-block.fields.LIST[1] = lists[block.fields.LIST[0]];
-}
-}
-}
-}
-}
+        function removeGhostVariablesFromSprites(sprites) {
+            var totalVarsInProject=0;
+            var totalVarsRemoved=0;
+            for(let sprite of sprites) {
+                if(!sprite) continue;
+                let removedVars=0, removedLists=0;
+                let vars={__proto__:null};
+                if(sprite.variables) {
+                    for(let id in sprite.variables) {
+                        totalVarsInProject+=1;
+                        let [name, value]=sprite.variables[id];
+                        if(name in vars) {
+                            delete sprite.variables[id];
+                            removedVars+=1;
+                            totalVarsRemoved+=1;
+                        }
+                        else {
+                            vars[name]=id;
+                        }
+                    }
+                }
+                let lists={__proto__:null};
+                if(sprite.lists) {
+                    for(let id in sprite.lists) {
+                        totalVarsInProject+=1;
+                        let [name, value]=sprite.lists[id];
+                        if(name in lists) {
+                            delete sprite.lists[id];
+                            removedLists+=1;
+                            totalVarsRemoved+=1;
+                        }
+                        else {
+                            lists[name]=id;
+                        }
+                    }
+                }
+                if(removedVars>0) log(`${removedVars} variables removed from ${sprite.name}`);
+                if(removedLists>0) log(`${removedLists} lists removed from ${sprite.name}`);
+                fixVariableBlocksInSprites(sprite.isStage?sprites:[sprite], vars, lists);
+            }
+            log("----");
+            log(`${totalVarsRemoved} variables and lists (${(totalVarsRemoved/totalVarsInProject).toPrecision(2)}%) removed from project`);
+        }
+        function* getBlockObjects(blocks) {
+            for(let block of Object.values(blocks)) {
+                if(!block) continue;
+                yield block;
+                if(block.inputs){
+                    for(let input of Object.values(block.inputs)) {
+                        for(let i=1; i<input.length; i++){
+                            if(Array.isArray(input[i])) yield input[i];
+                        }
+                    }
+                }
+            }
+        }
+        function fixVariableBlocksInSprites(sprites, vars, lists){
+            for(let sprite of sprites) {
+                if(!sprite || !sprite.blocks) continue;
+                for(let block of getBlockObjects(sprite.blocks)) {
+                    // fix data_variable and data_listcontents block shortcuts:
+                    // [12, var_name, var_id] and [13, list_name, list_id]
+                    if(block[0]==12) {
+                        if(block[1] in vars) {
+                            block[2]=vars[block[1]];
+                        }
+                    }
+                    if(block[0]==13) {
+                        if(block[1] in lists) {
+                            block[2]=lists[block[1]];
+                        }
+                    }
+                    // fix blocks with VARIABLE and LIST fields
+                    if(block.fields) {
+                        if(block.fields.VARIABLE && (block.fields.VARIABLE[0] in vars)) {
+                            block.fields.VARIABLE[1] = vars[block.fields.VARIABLE[0]];
+                        }
+                        if(block.fields.LIST && (block.fields.LIST[0] in lists)) {
+                            block.fields.LIST[1] = lists[block.fields.LIST[0]];
+                        }
+                    }
+                }
+            }
+        }
     </script>
 </body>
 </html>
