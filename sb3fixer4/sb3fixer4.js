@@ -1,12 +1,12 @@
 "use strict";
-var iurlid = document.getElementById("iurlid"), ifile = document.getElementById("ifile"), burlid = document.getElementById("burlid"), bfile = document.getElementById("bfile"), ologs = document.getElementById("ologs"), ouser = document.getElementById("ouser"), warnings = document.getElementById("warnings");
+var iurlid = document.getElementById("iurlid"), ifile = document.getElementById("ifile"), burlid = document.getElementById("burlid"), bfile = document.getElementById("bfile"), ologs = document.getElementById("ologs"), ouser = document.getElementById("ouser"), warnings = document.getElementById("warnings"), hidedetails = document.getElementById("hidedetails");
 var options = {
     deleteSuspiciousOpcodes: true,
     deleteUnknownOpcodes: false, // can break projects made using mods or future versions AND can break hacked blocks
     deleteInvisibleBlocks: false, // can break hacked blocks
     deleteGhostBlocks: true, // deletes those invisible blocks that I think can't run
     /** 0=don't, 1=floating reporters, 2=anything not connected to hat blocks. It won't delete the blocks if there are comments attached to them */
-    deleteDisconnectedBlocks: 1,
+    deleteDisconnectedBlocks: 0,
     unTopLevelifyReferencedBlocks: true, // recommended when also using splitDoublyReferencedBlocks
     splitDoublyReferencedBlocks: true, // can freeze if the project has excessive double referencing, but prevents some bugs in the editor
     repairParentReferences: true, // fixes some glitches related to glowing blocks, including some that can freeze the project's display
@@ -14,8 +14,10 @@ var options = {
     replaceBlockIds: false,
     copyCustomInputIdsFromDefinition: true,
     deleteDuplicateDefinitions: true,
-    replaceCustomInputIds: true,
-    removeRedundantMutations: true,
+    replaceCustomInputIds: false,
+    removeRedundantMutations: false,
+    maintainRedundantMutations: true, // works only if copyCustomInputIdsFromDefinition is enabled. Extends its behavior to copying/creating redundant mutations.
+    fixConstantMutationParts: true, // makes sure each mutation has tagName:"mutation" and children:[]
     //deleteExcessCustomBlockInputDefaults: true, // can break certain hacked blocks
     deleteInvalidCustomBlockInputs: true, // fixes the bug that makes custom block inputs look like they're empty, and some bugs with editing custom blocks. Can change project behavior if not paired with copyCustomInputIdsFromDefinition
     cutInvalidReferences: true, // can prevent certain freezes. Scratch is also doing a version of this
@@ -26,7 +28,7 @@ var options = {
     deleteCollidingUnusedVariables: true,
     mergeCollidingVariables: false, // can change project behavior
     deleteUnusedMonitors: true, // can break hacked monitors
-    deleteAllUnusedVariables: false, // might deletes variables that are referenced only in sensing blocks
+    deleteAllUnusedVariables: false,
     replaceVariableIds: false, // can break hacked monitors
     removeVariableNames: false, // seems like Scratch undoes it automatically now (it was good for compression but could cause problems if when accidentally deleting a variable and when backpacking)
     idPrefix: Date.now().toString(36) + "S", // added before each generated ID to prevent cross-project ID collisions
@@ -39,7 +41,10 @@ var project, p, zip;
 function disableInputs(x) {
     iurlid.disabled = ifile.disabled = burlid.disabled = bfile.disabled = x;
 }
+var disableLogs = false;
 function _log(str, parent, logGroups, group) {
+    if (disableLogs)
+        return;
     var div = document.createElement("div");
     div.innerText = str;
     if (group) {
@@ -61,6 +66,12 @@ function _log(str, parent, logGroups, group) {
         }
     }
     parent.appendChild(div);
+}
+function clearLogs() {
+    logGroups.clear();
+    warnGroups.clear();
+    ologs.innerHTML = "";
+    warnings.innerHTML = "";
 }
 var logGroups = new Map();
 function log(str, group) {
@@ -139,7 +150,7 @@ const idmatcher = /(?<=\/\/[^]*\/)\d+|^\d+$/;
 async function fixOnlineProject() {
     disableInputs(true);
     ouser.innerText = "...";
-    ologs.innerText = warnings.innerText = "";
+    clearLogs();
     try {
         const projidmatch = idmatcher.exec(iurlid.value);
         if (!projidmatch || !projidmatch[0])
@@ -159,7 +170,7 @@ async function fixOnlineProject() {
 async function fixOfflineProject() {
     disableInputs(true);
     ouser.innerText = "...";
-    ologs.innerText = warnings.innerText = "";
+    clearLogs();
     try {
         const file = ifile.files[0];
         if (!file)
@@ -199,9 +210,12 @@ async function fixProjectFile(file, name) {
     project = JSON.parse(jsonText);
     p = structuredClone(project);
     log("----\n");
+    if (hidedetails.checked)
+        disableLogs = true;
     await new Promise(resolve => setTimeout(resolve, 0));
     fixProject(project, options);
     await new Promise(resolve => setTimeout(resolve, 0));
+    disableLogs = false;
     const fixed = JSON.stringify(project);
     const old = JSON.stringify(p);
     const didChanges = (fixed != old);
@@ -743,6 +757,13 @@ function fixProject(project, options) {
             }
         }
         // mark the variables of sensing blocks, so the renamings can affect them
+        const allTargetIndexes = (() => {
+            let idxs = [];
+            for (let i = 0; i < targets.length; i++) {
+                idxs.push(i);
+            }
+            return idxs;
+        })();
         for (const sprite of targets) {
             if (!isJSONObject(sprite.blocks))
                 continue;
@@ -754,23 +775,27 @@ function fixProject(project, options) {
                 if (!Array.isArray(block.fields.PROPERTY) || !Array.isArray(block.inputs.OBJECT))
                     continue;
                 const inp = block.inputs.OBJECT;
-                let spriteBlock = inp[2] && sprite.blocks[String(inp[2])];
+                let spriteBlock = inp[1] !== null ? sprite.blocks[String(inp[1])] : sprite.blocks[String(inp[2])];
+                let spriteIdxes;
                 if (!isJSONObject(spriteBlock) || spriteBlock.opcode !== "sensing_of_object_menu") {
-                    spriteBlock = inp[1] && sprite.blocks[String(inp[1])];
+                    spriteIdxes = allTargetIndexes;
                 }
-                if (!isJSONObject(spriteBlock) || spriteBlock.opcode !== "sensing_of_object_menu")
-                    continue;
-                if (!isJSONObject(spriteBlock.fields))
-                    continue;
-                if (!Array.isArray(spriteBlock.fields.OBJECT))
-                    continue;
-                const spriteName = spriteBlock.fields.OBJECT[0];
+                else {
+                    if (!isJSONObject(spriteBlock.fields))
+                        continue;
+                    if (!Array.isArray(spriteBlock.fields.OBJECT))
+                        continue;
+                    const spriteName = spriteBlock.fields.OBJECT[0];
+                    const spriteIdx = spriteName == "_stage_" ? 0 : spriteNameMap.get(spriteName);
+                    if (typeof spriteIdx !== "number")
+                        continue;
+                    spriteIdxes = [spriteIdx];
+                }
                 const varName = block.fields.PROPERTY[0];
-                const spriteIdx = spriteName == "_stage_" ? 0 : spriteNameMap.get(spriteName);
-                if (typeof spriteIdx !== "number")
-                    continue;
-                const v = varLists[spriteIdx].findLocalByName({ name: varName, list: "variables" });
-                markVarUse(v, block.fields.PROPERTY);
+                for (const spriteIdx of spriteIdxes) {
+                    const v = varLists[spriteIdx].findLocalByName({ name: varName, list: "variables" });
+                    markVarUse(v, block.fields.PROPERTY);
+                }
             }
         }
         // monitors
@@ -1195,13 +1220,14 @@ class BlockSpagetti {
         }
     }
 }
+const PROCEDURES_DEFINITION = "procedures_definition";
+const PROCEDURES_PROTOTYPE = "procedures_prototype";
 function deleteProblematicBlocks(spagetti, sprite, options) {
     const commentedBlockIds = new Set();
     for (const comment of Object.values(sprite.comments || {})) {
         if (isID(comment.blockId))
             commentedBlockIds.add(comment.blockId);
     }
-    let deleteCount = 0;
     const deleteGhostBlocks = options.deleteGhostBlocks || options.deleteInvisibleBlocks;
     const sus = /undefined|(?<!^procedures_)definition/;
     function isBlockValid({ block }) {
@@ -1227,25 +1253,34 @@ function deleteProblematicBlocks(spagetti, sprite, options) {
         }
         else {
             // Scratch treats procedures_definition differently, so it doesn't appear in the extracted hat block list but for our purposes it should count as a hat block
-            if (options.deleteDisconnectedBlocks && block.opcode && typeof OpcodeType === "object" && OpcodeType[block.opcode] < options.deleteDisconnectedBlocks && block.opcode !== "procedures_definition" && !(isID(id) && commentedBlockIds.has(id)) && typeof block.comment !== "string")
+            if (options.deleteDisconnectedBlocks && block.opcode && typeof OpcodeType === "object" && OpcodeType[block.opcode] < options.deleteDisconnectedBlocks && block.opcode !== PROCEDURES_DEFINITION && !(isID(id) && commentedBlockIds.has(id)) && typeof block.comment !== "string")
                 return false;
             // procedures_definition can also run if not marked as topLevel, so it doesn't count as a ghost block
-            if (options.deleteGhostBlocks && !block.topLevel && (block.opcode !== "procedures_definition" || options.deleteInvisibleBlocks))
+            if (options.deleteGhostBlocks && !block.topLevel && (block.opcode !== PROCEDURES_DEFINITION || options.deleteInvisibleBlocks))
                 return false;
-            if (block.shadow && (options.deleteInvisibleBlocks || options.deleteGhostBlocks && block.opcode && typeof OpcodeType === "object" && OpcodeType[block.opcode] < 2 && block.opcode !== "procedures_defintion"))
+            if (block.shadow && (options.deleteInvisibleBlocks || options.deleteGhostBlocks && block.opcode && typeof OpcodeType === "object" && OpcodeType[block.opcode] < 2 && block.opcode !== PROCEDURES_DEFINITION))
                 return false;
         }
         return true;
     }
     if (options.deleteDisconnectedBlocks || deleteGhostBlocks || options.deleteSuspiciousOpcodes || options.deleteUnknownOpcodes) {
-        deleteCount += spagetti.deleteBlocksWithoutSatisfyingAncestor(isBlockUsed);
+        let deleteCount = spagetti.deleteBlocksWithoutSatisfyingAncestor(isBlockUsed);
+        if (deleteCount > 0) {
+            let reasons = [];
+            if (options.deleteDisconnectedBlocks || options.deleteGhostBlocks)
+                reasons.push("unused");
+            if (options.deleteInvisibleBlocks || options.deleteGhostBlocks)
+                reasons.push("invisible");
+            log(`${sprite.name}: deleted ${deleteCount} blocks that were ${reasons.join(" or ")}`);
+        }
     }
     if (options.deleteSuspiciousOpcodes || options.deleteUnknownOpcodes) {
         // delete invalid opcodes found inside a block stack
-        deleteCount += spagetti.deleteBlocksThatDontSatisfy(isBlockValid);
+        let deleteCount = spagetti.deleteBlocksThatDontSatisfy(isBlockValid);
+        if (deleteCount > 0) {
+            log(`${sprite.name}: deleted ${deleteCount} blocks because of invalid opcodes`);
+        }
     }
-    if (deleteCount > 0)
-        log(`${sprite.name}: deleted ${deleteCount} blocks that were unused or invalid`);
 }
 function unTopLevelifyReferencedBlocks(spagetti) {
     let count = 0;
@@ -1333,13 +1368,13 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
         for (const { block, ptr, id } of spagetti.blocks()) {
             if (!isJSONObject(block))
                 continue;
-            if (block.opcode === "procedures_prototype" && ((_a = block.mutation) === null || _a === void 0 ? void 0 : _a.proccode)) {
+            if (block.opcode === PROCEDURES_PROTOTYPE && ((_a = block.mutation) === null || _a === void 0 ? void 0 : _a.proccode)) {
                 const proccode = block.mutation.proccode;
                 if (firstPrototype.has(proccode))
                     continue;
                 firstPrototype.set(proccode, block.mutation);
             }
-            if (block.opcode === "procedures_definition") {
+            if (block.opcode === PROCEDURES_DEFINITION) {
                 const custom_block = getInputBlock(block, "custom_block");
                 if (!Array.isArray(custom_block) && ((_b = custom_block === null || custom_block === void 0 ? void 0 : custom_block.mutation) === null || _b === void 0 ? void 0 : _b.proccode)) {
                     const proccode = custom_block.mutation.proccode;
@@ -1369,7 +1404,7 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
                     const def = firstDefinition.get(block.mutation.proccode);
                     if (!proto)
                         continue;
-                    if (block.opcode === "procedures_prototype") {
+                    if (block.opcode === PROCEDURES_PROTOTYPE) {
                         if (block.mutation.argumentdefaults !== proto.argumentdefaults) {
                             block.mutation.argumentdefaults = proto.argumentdefaults;
                             changed = true;
@@ -1383,6 +1418,12 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
                             changed = true;
                         }
                     }
+                    else if (options.maintainRedundantMutations) {
+                        if (def && block.mutation.warp !== def.warp) {
+                            block.mutation.warp = def.warp;
+                            changed = true;
+                        }
+                    }
                     if (block.mutation.argumentids !== proto.argumentids) {
                         block.mutation.argumentids = proto.argumentids;
                         changed = true;
@@ -1392,7 +1433,7 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
                     count += 1;
             }
             if (count > 0)
-                log(`${sprite.name}: changed ${count} custom blocks`);
+                log(`${sprite.name}: changed ${count} custom blocks' data to match definition`);
         }
     }
     // should run after copyCustomInputIdsFromDefinition
@@ -1465,6 +1506,23 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
             }
         }
     }
+    if (options.fixConstantMutationParts) {
+        let count = 0;
+        for (const { block } of spagetti.blocks()) {
+            if (!isJSONObject(block) || !isJSONObject(block.mutation))
+                continue;
+            if (block.mutation.tagName !== "mutation") {
+                count++;
+                block.mutation.tagName = "mutation";
+            }
+            if (!Array.isArray(block.mutation.children) || block.mutation.children.length !== 0) {
+                count++;
+                block.mutation.children = [];
+            }
+        }
+        if (count > 0)
+            log(`${sprite.name}: fixed ${count} useless but required mutation parts`);
+    }
     if (options.removeRedundantMutations) {
         let count = 0;
         for (const { block } of spagetti.blocks()) {
@@ -1477,7 +1535,7 @@ function doBlockFixes(spagetti, sprite, forbiddenIDs, PREFIX, options) {
                     continue;
                 const validProperties = new Set(["tagName", "children"]); // Scratch doesn't let deleting these, even though they store no useful information :(
                 switch (block.opcode) {
-                    case "procedures_prototype":
+                    case PROCEDURES_PROTOTYPE:
                         validProperties.add("argumentnames");
                         validProperties.add("argumentdefaults");
                         validProperties.add("warp");
